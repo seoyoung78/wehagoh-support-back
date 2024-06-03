@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.MSC_040000.mapper.MSC_040000Mapper">
+    <!--  영상기능결과 조회  -->
+    <select id="selectRadiology" resultType="com.duzon.lulu.service.MSC.MSC_040000.model.Radiology">
+        SELECT msrexmrsn.pid
+            , msrexmrsn.prsc_date
+            , msrexmrsn.prsc_sqno
+            , msrexmrsn.del_yn
+            , COALESCE(msrexmrsn.iptn_rslt, '') AS iptn_rslt
+            , msrexmrsn.pacs_link_path
+            , msrexmrsn.pacs_co_cd
+            , msrexmrsn.pacs_no
+            -- 출력지 데이터
+            , to_char(msrexmrsn.cndt_dt, 'YYYY년 MM월 DD일') as cndt_dt
+            , coalesce((select x.sign_lctn from cfgwuserm x where x.usid =
+            (SELECT mdcr_dr_id FROM hoootrcin WHERE rcpn_no = msrexmrsn.rcpn_no AND hstr_stat_cd = 'Y')
+            and sign_lctn is not null limit 1), '') as sign_lctn
+        FROM msrexmrsn
+        WHERE msrexmrsn.pid = #{pid}
+          AND msrexmrsn.prsc_date = #{prsc_date}::date
+          AND msrexmrsn.prsc_sqno = #{prsc_sqno}::bigint
+          AND msrexmrsn.del_yn = 'N'
+    </select>
+    
+    <!--  영상기능결과 이력 추가  -->
+    <insert id="insertHistory">
+        INSERT INTO msrexmrsh (
+            pid
+            , prsc_date
+            , prsc_sqno
+            , frst_rgst_usid
+            , last_updt_usid
+            , del_yn
+            , cndt_usid
+            , cndt_dt
+            , iptn_dr_usid
+            , iptn_dt
+            , rptg_usid
+            , rptg_dt
+            , iptn_rslt
+            , pacs_link_path
+            , pacs_co_cd
+            , exmn_pclr_matr
+            , exmn_eqpm_cd
+            , rcpn_no
+            , prsc_cd
+            , prsc_clsf_cd
+            , slip_cd
+            , pacs_no
+            , dgsg_no
+            , hstr_stat_cd
+        )
+        SELECT
+            pid
+            , prsc_date
+            , prsc_sqno
+            , #{portal_id}
+            , #{portal_id}
+            , del_yn
+            , cndt_usid
+            , cndt_dt
+            , iptn_dr_usid
+            , iptn_dt
+            , rptg_usid
+            , rptg_dt
+            , iptn_rslt
+            , pacs_link_path
+            , pacs_co_cd
+            , exmn_pclr_matr
+            , exmn_eqpm_cd
+            , rcpn_no
+            , prsc_cd
+            , prsc_clsf_cd
+            , slip_cd
+            , pacs_no
+            , dgsg_no
+            , #{hstr_stat_cd}
+        FROM msrexmrsn
+        WHERE pid = #{pid}
+        AND prsc_date = #{prsc_date}::date
+        AND prsc_sqno = #{prsc_sqno}::bigint
+    </insert>
+
+    <!--  검사 완료/검사 취소 시 영상기능결과 추가 및 수정  -->
+    <insert id="insertConduct">
+        INSERT INTO msrexmrsn
+        (
+            pid
+            , prsc_date
+            , prsc_sqno
+            , frst_rgst_usid
+            , last_updt_usid
+            , del_yn
+            , cndt_usid
+            , cndt_dt
+            , rcpn_no
+            , pacs_co_cd
+            , prsc_cd
+            , prsc_clsf_cd
+            , slip_cd
+            , pacs_no
+        )
+        SELECT #{pid}
+            , #{prsc_date}::date
+            , #{prsc_sqno}::bigint
+            , #{portal_id}
+            , #{portal_id}
+            , 'N'
+            , #{portal_id}
+            , now()
+            , rcpn_no
+            , pacs_co_cd
+            , prsc_cd
+            , prsc_clsf_cd
+            , slip_cd
+            , pacs_no
+        FROM meddttpsn
+        WHERE pid = #{pid}
+          AND prsc_date = #{prsc_date}::date
+          AND prsc_sqno = #{prsc_sqno}::bigint
+        ON CONFLICT (pid, prsc_date, prsc_sqno) DO UPDATE SET
+            last_updt_usid = #{portal_id}
+            , last_updt_dt = now()
+            , del_yn = #{del_yn}
+            , pacs_co_cd = #{pacs_cd}
+        <if test='del_yn != null and del_yn.equals("N")'>
+            , cndt_usid = #{portal_id}
+            , cndt_dt = now()
+        </if>
+    </insert>
+
+    <!--  판독 저장 : 판독 중  -->
+    <update id="updateSave">
+        UPDATE msrexmrsn
+        SET last_updt_usid = #{portal_id}
+            , last_updt_dt = now()
+            , iptn_dr_usid = #{portal_id}
+            , iptn_dt = now()
+            , iptn_rslt = #{iptn_rslt}
+            , pacs_link_path = #{pacs_link_path}
+            , dgsg_no = #{dgsg_no}
+        WHERE pid = #{pid}
+          AND prsc_date = #{prsc_date}::date
+          AND prsc_sqno = #{prsc_sqno}::bigint
+    </update>
+
+    <!--  판독 취소  -->
+    <update id="updateSaveCancel">
+        UPDATE msrexmrsn
+        SET last_updt_usid = #{portal_id}
+            , last_updt_dt = now()
+            , iptn_dr_usid = null
+            , iptn_dt = null
+            , iptn_rslt = null
+            , pacs_link_path = null
+            , dgsg_no = #{dgsg_no}
+        WHERE pid = #{pid}
+        AND prsc_date = #{prsc_date}::date
+        AND prsc_sqno = #{prsc_sqno}::bigint
+    </update>
+
+    <!--  최종 판독 : 판독 완료  -->
+    <update id="updateInterpret">
+        UPDATE msrexmrsn
+        SET last_updt_usid = #{portal_id}
+            , last_updt_dt = now()
+            , rptg_usid = #{portal_id}
+            , rptg_dt = now()
+            , iptn_rslt = #{iptn_rslt}
+            , pacs_link_path = #{pacs_link_path}
+            , dgsg_no = #{dgsg_no}
+        WHERE pid = #{pid}
+        AND prsc_date = #{prsc_date}::date
+        AND prsc_sqno = #{prsc_sqno}::bigint
+    </update>
+
+    <!--  최종판독 취소  -->
+    <update id="updateInterpretCancel">
+        UPDATE msrexmrsn
+        SET last_updt_usid = #{portal_id}
+            , last_updt_dt = now()
+            , rptg_usid = null
+            , rptg_dt = null
+        WHERE pid = #{pid}
+        AND prsc_date = #{prsc_date}::date
+        AND prsc_sqno = #{prsc_sqno}::bigint
+    </update>
+
+    <!--  최종 판독 시 결과 입력  -->
+    <insert id="insertResult">
+        INSERT INTO mscemnrsn
+        (
+            frst_rgst_usid
+            , last_updt_usid
+            , pid
+            , prsc_date
+            , prsc_sqno
+            , prsc_clsf_cd
+            , slip_cd
+            , exmn_cd
+            , exmn_rslt_2
+            , rslt_type_dvsn
+            , prsc_prgr_stat_cd
+            , cndt_usid
+            , cndt_dt
+            , rptg_dt
+            , rcpn_no
+            , pacs_link_path
+            , pacs_co_cd
+            , exmn_hope_date
+        )
+        SELECT #{portal_id}
+            , #{portal_id}
+            , #{pid}
+            , #{prsc_date}::date
+            , #{prsc_sqno}::bigint
+            , prsc_clsf_cd
+            , slip_cd
+            , prsc_cd
+            , iptn_rslt
+            , 'T'
+            , 'O'
+            , cndt_usid
+            , cndt_dt
+            , rptg_dt
+            , rcpn_no
+            , pacs_link_path
+            , pacs_co_cd
+            , (SELECT exmn_hope_date FROM meddttpsn WHERE pid = #{pid} AND prsc_date = #{prsc_date}::date AND prsc_sqno = ${prsc_sqno}::bigint)
+        FROM msrexmrsn
+        WHERE pid = #{pid}
+        AND prsc_date = #{prsc_date}::date
+        AND prsc_sqno = #{prsc_sqno}::bigint
+    </insert>
+
+    <!--  결과 이력 조회  -->
+    <select id="selectHistory" resultType="com.duzon.lulu.service.MSC.MSC_040000.model.History">
+        SELECT last_updt_dt
+            , CASE
+                WHEN COALESCE((SELECT user_nm FROM cfgwuserm WHERE usid = a.last_updt_usid LIMIT 1), '') != ''
+                    THEN CONCAT(
+                    COALESCE((SELECT user_nm FROM cfgwuserm WHERE usid = a.last_updt_usid LIMIT 1), '')
+                    , '(', last_updt_usid, ')')
+            ELSE last_updt_usid
+            END AS last_updt_usid
+            , CASE
+                WHEN EXISTS(SELECT 1 FROM cmmdgsgnh WHERE dgsg_key = dgsg_no)
+                    THEN 'Y'
+                ELSE 'N'
+            END AS sign_yn
+            , hstr_stat_cd
+            , COALESCE(iptn_rslt, '') AS resultTxt
+        FROM msrexmrsh a
+        WHERE hstr_stat_cd IS NOT NULL
+          AND pid = #{pid}
+          AND prsc_date = #{prsc_date}::date
+          AND prsc_sqno = #{prsc_sqno}::bigint
+        ORDER BY hstr_sqno DESC
+    </select>
+
+</mapper>

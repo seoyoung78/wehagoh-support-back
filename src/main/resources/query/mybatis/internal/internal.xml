@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.Internal.mapper.InternalMapper">
+    <!--  DID 금일 검사중 & 치료중 환자  -->
+    <select id="selectRcpnPatient" resultType="com.duzon.lulu.service.MSC.Internal.model.Patient">
+        SELECT a.*
+            , b.pt_nm AS patient_real_name
+            , CASE
+                WHEN b.frnr_yn = 'Y' AND b.pt_last_engl_nm IS NOT NULL
+                    THEN CONCAT(b.pt_frst_engl_nm, ' ', repeat('O', LENGTH(b.pt_last_engl_nm)))
+                WHEN LENGTH(b.pt_nm) = 2
+                    THEN LEFT(b.pt_nm, 1)||'O'
+                ELSE
+                    CONCAT(LEFT(b.pt_nm, 1), repeat('O', LENGTH(b.pt_nm) - 2), RIGHT(b.pt_nm, 1))
+                END AS patient_name
+        FROM hooptbaim b
+        , (SELECT pid AS patient_id
+                , hope_exrm_dept_sqno AS exrm_dept_sqno
+                , MAX(cndt_dt) AS rcpn_dt
+            FROM meddttpsn
+            WHERE exmn_hope_date = now()::date
+              AND cndt_dt >= now()::date::TIMESTAMP
+              AND cndt_dt &lt; now()::date::TIMESTAMP + INTERVAL '1 day'
+              AND prsc_prgr_stat_cd = 'E'
+              AND COALESCE(dc_yn, 'N') = 'N'
+              AND COALESCE(mdcr_cncl_yn, 'N') = 'N'
+              AND hope_exrm_dept_sqno = #{exrm_dept_sqno}::int
+              AND COALESCE(mdtr_site_cd, '') NOT IN ('P', '99')
+            GROUP BY pid, hope_exrm_dept_sqno
+        UNION ALL
+            SELECT pid AS patient_id
+                , hope_trrm_dept_sqno AS exrm_dept_sqno
+                , MAX(rcpn_dt) AS rcpn_dt
+            FROM medrhbpcn
+            WHERE mdtr_hope_date = now()::date
+              AND rcpn_dt >= now()::date::TIMESTAMP
+              AND rcpn_dt &lt; now()::date::TIMESTAMP + INTERVAL '1 day'
+              AND prsc_prgr_stat_cd = 'C'
+              AND COALESCE(dc_yn, 'N') = 'N'
+              AND COALESCE(mdcr_cncl_yn, 'N') = 'N'
+              AND hope_trrm_dept_sqno = #{exrm_dept_sqno}::int
+            GROUP BY pid, hope_trrm_dept_sqno
+            ORDER BY rcpn_dt DESC
+            LIMIT 1
+        ) AS a
+        WHERE b.pid = a.patient_id
+          AND b.del_yn = 'N'
+    </select>
+
+    <!--  DID 금일 검사대기 & 치료대기 환자 목록  -->
+    <select id="selectWaitPatientList" resultType="com.duzon.lulu.service.MSC.Internal.model.Patient">
+        SELECT a.*
+            , CASE
+            WHEN b.frnr_yn = 'Y' AND b.pt_last_engl_nm IS NOT NULL
+                THEN CONCAT(b.pt_frst_engl_nm, ' ', repeat('0', LENGTH(b.pt_last_engl_nm)))
+            WHEN LENGTH(b.pt_nm) = 2
+                THEN LEFT(b.pt_nm, 1)||'O'
+            ELSE
+                CONCAT(LEFT(b.pt_nm, 1), repeat('O', LENGTH(b.pt_nm) - 2), RIGHT(b.pt_nm, 1))
+            END AS patient_name
+            , b.pt_nm AS patient_real_name
+        FROM hooptbaim AS b
+        , ( SELECT pid AS patient_id
+            , hope_exrm_dept_sqno AS exrm_dept_sqno
+            , MAX(CASE
+            WHEN EXISTS (SELECT emrg_pt_yn FROM medemgstn WHERE rcpn_no = meddttpsn.rcpn_no AND emrg_pt_yn = 'Y')
+                THEN 'E'
+            ELSE '' END) AS status
+            , MAX(rcpn_dt) AS rcpn_dt
+        FROM meddttpsn
+            WHERE exmn_hope_date = now()::date
+              AND rcpn_dt >= now()::date::TIMESTAMP
+              AND rcpn_dt &lt; now()::date::TIMESTAMP + INTERVAL '1 day'
+              AND prsc_prgr_stat_cd = 'C'
+              AND COALESCE(dc_yn, 'N') = 'N'
+              AND COALESCE(mdcr_cncl_yn, 'N') = 'N'
+              AND COALESCE(mdtr_site_cd, '') NOT IN ('P', '99')
+              AND hope_exrm_dept_sqno IN
+            <foreach collection="exrm_dept_sqno_list" separator="," open="(" close=")" item="item">
+                #{item}::int
+            </foreach>
+            GROUP BY pid, hope_exrm_dept_sqno
+        UNION ALL
+            SELECT pid AS patient_id
+                , hope_trrm_dept_sqno AS exrm_dept_sqno
+                , MAX(CASE
+                WHEN EXISTS (SELECT emrg_pt_yn FROM medemgstn WHERE rcpn_no = medrhbpcn.rcpn_no AND emrg_pt_yn = 'Y')
+                    THEN 'E'
+                ELSE '' END) AS status
+                , MAX(rcpn_dt) AS rcpn_dt
+        FROM medrhbpcn
+            WHERE mdtr_hope_date = now()::date
+              AND prsc_prgr_stat_cd = 'B'
+              AND COALESCE(dc_yn, 'N') = 'N'
+              AND COALESCE(mdcr_cncl_yn, 'N') = 'N'
+              AND hope_trrm_dept_sqno IN
+            <foreach collection="exrm_dept_sqno_list" separator="," open="(" close=")" item="item">
+                #{item}::int
+            </foreach>
+            GROUP BY pid, hope_trrm_dept_sqno
+        ) AS a
+        WHERE b.pid = a.patient_id
+        AND b.del_yn = 'N'
+        ORDER BY rcpn_dt DESC
+    </select>
+
+</mapper>

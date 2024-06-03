@@ -1,0 +1,24 @@
+logging:
+  config: classpath:log4j2/log4j2.xml
+spring:
+  redis:
+    host: 10.70.201.92
+    port: 6379
+    password: douzone1!
+  elasticsearch:
+    rest:
+      uris: 10.70.127.131:9200
+
+clinic:
+  redis:
+    host: 10.70.127.134,10.70.127.135,10.70.127.136
+    port: 6379
+    password: douzone1!
+wehago:
+  serviceCode: cliniccommon
+  tms:
+    url: http://10.70.127.148/HISTMS/services/duzon
+  redis:
+    host: 10.70.201.92
+    port: 6379
+    password: douzone1!

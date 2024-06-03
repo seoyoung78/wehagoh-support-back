@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.common.mapper.MobileMapper">
+
+    <select id="getExrmList" resultType="com.duzon.lulu.service.MSC.common.model.Mobile.ExrmListModel">
+        select
+            (SELECT dgns_nm FROM medptdgnn WHERE rcpn_no = undorcpn.rcpn_no AND dvsn = '1' AND del_yn = 'N')
+            , undorcpn.cndt_dt
+            , CONCAT(hooptbaim.sex_cd, '/', mono.fn_get_age(CASE WHEN (COALESCE(hooptbaim.pt_srrn, '') = '' OR COALESCE(hooptbaim.pt_frrn, '') = '') THEN NULL
+                                         WHEN SUBSTRING(hooptbaim.pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', hooptbaim.pt_frrn)
+                                         WHEN SUBSTRING(hooptbaim.pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', hooptbaim.pt_frrn)
+                                         ELSE CONCAT('20', hooptbaim.pt_frrn)
+                    END, '2')) as age_cd
+            , undorcpn.prsc_date
+            , to_char(undorcpn.prsc_date, 'YYYYMMDD') as prsc_date_ft
+            , meddttpsn.prsc_nm
+            , undorcpn.pid
+            , '' as frst_rgdt
+            , undorcpn.mdcr_date
+            , TO_CHAR((CASE WHEN (COALESCE(hooptbaim.pt_srrn, '') = '' OR COALESCE(hooptbaim.pt_frrn, '') = '') THEN NULL
+                                  WHEN SUBSTRING(hooptbaim.pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', hooptbaim.pt_frrn)
+                                  WHEN SUBSTRING(hooptbaim.pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', hooptbaim.pt_frrn)
+                                  ELSE CONCAT('20', hooptbaim.pt_frrn)
+                END)::date,'yyyymmdd')  dobr
+            , (select cfgemplem.spsb_aomp_cd from cfgemplem cfgemplem where cfgemplem.empl_sqno = undorcpn.mdcr_dr_empl_sqno) as dept_hnm
+            , meddttpsn.hope_exrm_dept_sqno as hope_exrm_cd
+            , cfgexmrmn.exrm_detl_info as hope_exrm_nm
+            , CONCAT(hooptbaim.pt_nm, hooptbaim.nm_dscm_dvcd) as pt_nm
+            , hooptbaim.pt_nm AS real_pt_nm
+            , hooptbaim.nm_dscm_dvcd
+            , cfgwuserm.user_nm as mdcr_user_nm
+            , (SELECT count(*) - 1 FROM mslexmrsn WHERE pid = undorcpn.pid AND prsc_date = undorcpn.prsc_date AND del_yn = 'N') as prsc_cnt
+            , undorcpn.prsc_prgr_stat_cd as state_cd
+        from (
+        select
+            meddttpsn.prsc_date
+            , meddttpsn.pid
+            , meddttpsn.rcpn_no
+            , min(hoootrcin.mdcr_date) as mdcr_date
+            , case
+                when max(meddttpsn.prsc_prgr_stat_cd) = 'E' then 'E'
+                when min(meddttpsn.prsc_prgr_stat_cd) = 'N' then 'N'
+                else 'M'
+            end as prsc_prgr_stat_cd
+            , meddttpsn.mdcr_dr_empl_sqno
+            , min(meddttpsn.prsc_sqno) as prsc_sqno
+            , hoootrcin.mdcr_dr_id
+            , min(meddttpsn.cndt_dt) as cndt_dt
+        from hoootrcin hoootrcin
+            join meddttpsn meddttpsn on hoootrcin.pid = meddttpsn.pid and hoootrcin.rcpn_no = meddttpsn.rcpn_no
+        where prsc_clsf_cd = 'C1'
+             <if test='pid!=null and !pid.equals("")'>
+                 and meddttpsn.pid = #{pid}::text
+             </if>
+             <if test='hope_exrm_cd != null and !hope_exrm_cd.equals("")'>
+                 and meddttpsn.hope_exrm_dept_sqno = #{hope_exrm_cd}::int8
+             </if>
+            and prsc_prgr_stat_cd >= 'E'
+            and meddttpsn.dc_yn = 'N'
+            and hoootrcin.hstr_stat_cd = 'Y'	--이력 상태가 'Y'인 항목만(기존쿼리 참고)
+        group by
+            meddttpsn.prsc_date,
+            meddttpsn.rcpn_no,
+            meddttpsn.pid,
+            hoootrcin.mdcr_dr_id,
+            meddttpsn.mdcr_dr_empl_sqno
+        ) undorcpn
+            join hooptbaim hooptbaim on undorcpn.pid = hooptbaim.pid
+            join cfgwuserm cfgwuserm on cfgwuserm.usid = undorcpn.mdcr_dr_id
+            join meddttpsn meddttpsn on meddttpsn.pid = undorcpn.pid AND meddttpsn.prsc_date = undorcpn.prsc_date AND meddttpsn.prsc_sqno = undorcpn.prsc_sqno
+            JOIN cfgexmrmn cfgexmrmn on cfgexmrmn.fclt_info_sqno = meddttpsn.hope_exrm_dept_sqno
+        order by prsc_date DESC, state_cd, hooptbaim.pt_nm
+        <if test="countPerPage != null and countPerPage >=0">limit #{countPerPage} offset #{offset}</if>
+    </select>
+
+    <select id="getExrmRsltList" resultType="com.duzon.lulu.service.MSC.common.model.Mobile.ExrmRsltListModel">
+        select
+            mslexmrsn.pid, /* 환자 등록번호 */
+            mslexmrsn.prsc_date, /* 검사날짜 */
+            mslexmrsn.prsc_cd, /* 검사코드 */
+            coalesce((select x.user_nm from cfgwuserm x where x.usid = hoootrcin.mdcr_dr_id limit 1), '') as mdcr_dr_id,
+            meddttpsn.cndt_dt,
+            medprscdm.prsc_nm, /* 검사명 */
+            mslexmrsn.rslt_type_dvsn as exmn_rslt_tycd, /* 결과타입*/
+            mscspccdm.spcm_labl_nm as spcm_hnm, /* 검체명 */
+            mslexmrsn.spcm_no as brcd_no, /* 바코드 번호 */
+            mslexmrsn.rslt_sqno, /* 결과 일련번호 */
+            mslexmrsn.prsc_sqno, /* 처방일련번호 */
+            mslexmrsn.exmn_rslt_valu, /* 검사결과값 */
+            mslexmrsn.txt_rslt_valu, /* 텍스트결과값 */
+            mslexmrsn.rfvl_lwlm_valu, /* 참고치하한값 */
+            mslexmrsn.rfvl_uplm_valu, /* 참고치상한값 */
+            mslexmrsn.rslt_unit_dvsn, /* 참고치단위 */
+            mslexmrsn.exmn_cd, /* 검사코드 */
+            '' as frst_rgdt,
+            meddttpsn.trms_stat_dvsn, /* 수탁진행코드 */
+            meddttpsn.entd_exmn_yn, /* 수탁여부 */
+            (SELECT cmcd_nm
+            FROM mono.icmcomcld
+            WHERE cmcd_clsf_cd = 'CB4005'
+            AND cmcd_cd = hoootrcin.insn_tycd),
+            mslexmrsn.rptg_dt,
+            mslexmrsn.rslt_prgr_stat_cd as state_cd /* 상태코드 */
+        from meddttpsn meddttpsn /* [TB] 검사처방2 */
+        join mslexmrsn mslexmrsn /* [TB] 진단 검사 결과 내역 */
+            on meddttpsn.pid = mslexmrsn.pid /* [CL] 환자등록번호 */
+                and meddttpsn.prsc_date = mslexmrsn.prsc_date /* [CL] 처방일자 */
+                and meddttpsn.prsc_sqno = mslexmrsn.prsc_sqno /* [CL] 처방순번 */
+        join medprscdm medprscdm /* [TB] 검사처방코드마스터(검사명가져오기위함) */
+            on mslexmrsn.exmn_cd = medprscdm.prsc_cd /* [CL] 처방코드*/
+        join mscspccdm mscspccdm /* [TB] 검체코드 관리(검체명가져오기위함) */
+            on medprscdm.spcm_cd_1 = mscspccdm.spcm_cd /* [CL] 검체코드 */
+        join hoootrcin hoootrcin
+            on hoootrcin.rcpn_no = meddttpsn.rcpn_no
+            and hoootrcin.hstr_stat_cd = 'Y'
+        where meddttpsn.pid = #{pid}::text
+            and meddttpsn.prsc_date = #{prsc_date}::date
+        <if test='hope_exrm_cd != null and hope_exrm_cd != ""'>
+            and meddttpsn.hope_exrm_dept_sqno = #{hope_exrm_cd}::int8
+        </if>
+            and meddttpsn.prsc_clsf_cd = 'C1' /* [고정] 처방분류코드 (C1) 고정 { 공통코드:CR1001 -> C1[검체검사] } */
+            and meddttpsn.dc_yn != 'Y'
+            and meddttpsn.prsc_prgr_stat_cd IN ('E', 'M', 'N', 'F', 'G', 'H')
+            and mslexmrsn.del_yn != 'Y'
+        order by meddttpsn.prsc_date DESC, mslexmrsn.prsc_sqno, mslexmrsn.rslt_sqno, mslexmrsn.frst_rgst_dt
+    </select>
+</mapper>

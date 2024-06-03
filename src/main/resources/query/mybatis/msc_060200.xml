@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.MSC_060000.mapper.MSC_060200Mapper">
+    <!--  물리치료 환자 조회  -->
+    <select id="selectPatientList" resultType="com.duzon.lulu.service.MSC.MSC_060000.model.Patient">
+        SELECT ranked.pid, ranked.pt_nm, ranked.age_cd, ranked.mdtr_hope_date, ranked.rcps_nm
+            FROM (
+            SELECT
+                a.pid
+                , CONCAT(b.pt_nm, b.nm_dscm_dvcd) as pt_nm
+                , CONCAT(
+                (SELECT cmcd_smmr_nm FROM mono.icmcomcld WHERE cmcd_clsf_cd = 'CZ1001' AND cmcd_cd = b.sex_cd)
+                , (CASE WHEN b.undn_yn = 'Y' AND b.sex_cd != 'O'
+                        THEN  '/미상'
+                    WHEN b.undn_yn = 'N'
+                        THEN CONCAT('/',
+                        mono.fn_get_age(case when coalesce(b.pt_srrn, '') = '' OR coalesce(b.pt_frrn, '') = '' then to_char(CURRENT_DATE, 'YYYYMMDD')
+                        when substring(b.pt_srrn, 1, 1) = '1'
+                            or  substring(b.pt_srrn, 1, 1) = '2'
+                            or  substring(b.pt_srrn, 1, 1) = '5'
+                            or  substring(b.pt_srrn, 1, 1) = '6' then concat('19', b.pt_frrn)
+                        when substring(b.pt_srrn, 1, 1) = '9'
+                            or  substring(b.pt_srrn, 1, 1) = '0' then concat('18',b. pt_frrn)
+                        else concat('20', b.pt_frrn)
+                        end, '5'))
+                    ELSE ''
+                END)
+                    ) as age_cd
+                , a.mdtr_hope_date
+                , (SELECT user_nm FROM cfgwuserm WHERE usid = a.rcps_id LIMIT 1) as rcps_nm
+                , row_number() OVER (PARTITION BY a.pid ORDER BY a.mdtr_hope_date DESC) AS rn
+            FROM medrhbpcn a, hooptbaim b
+            WHERE b.pid = a.pid
+                AND a.prsc_prgr_stat_cd = 'N'
+                AND COALESCE(a.dc_yn, 'N') = 'N'
+                AND COALESCE(a.mdcr_cncl_yn, 'N') = 'N'
+                <if test='deptList != null and deptList.size() > 0'>
+                    and a.hope_trrm_dept_sqno IN (<foreach collection="deptList" item="item" separator=",">CAST(#{item} AS bigint)</foreach>)
+                </if>
+                <if test="pid != null and !pid.equals('')">
+                    AND a.pid = #{pid}
+                </if>
+                AND a.mdtr_hope_date BETWEEN #{from}::date AND #{to}::date
+            ) AS ranked
+        WHERE rn = 1
+        ORDER BY mdtr_hope_date, rcps_nm
+    </select>
+
+    <!--  물리치료 처방 목록  -->
+    <select id="selectPrscList" resultType="com.duzon.lulu.service.MSC.MSC_060000.model.Prescription">
+        SELECT a.mdtr_hope_date
+            , a.prsc_cd
+            , a.prsc_nm
+            , CONCAT(TO_CHAR(b.trtm_strt_dt, 'HH24:MM:SS'), ' ~ ', TO_CHAR(b.trtm_end_dt, 'HH24:MM:SS')) AS trtm_dt
+            , (SELECT user_nm FROM cfgwuserm WHERE usid = a.rcps_id LIMIT 1) AS rcps_nm
+            , coalesce(b.mdtr_opnn, '') AS mdtr_opnn
+            , (SELECT user_nm FROM cfgwuserm WHERE usid = a.prsc_dr_id limit 1) AS prsc_dr_nm
+        FROM medrhbpcn a, mshresltn b
+        WHERE a.pid = #{pid}
+        AND b.pid = a.pid
+        AND a.prsc_date = b.prsc_date
+        AND a.prsc_sqno = b.prsc_sqno
+        AND a.prsc_prgr_stat_cd = 'N'
+        AND COALESCE(a.dc_yn, 'N') = 'N'
+        AND COALESCE(a.mdcr_cncl_yn, 'N') = 'N'
+        AND b.del_yn = 'N'
+        AND b.rptg_dt IS NOT NULL
+        ORDER BY a.mdtr_hope_date DESC, b.trtm_strt_dt DESC
+    </select>
+
+    <!--  물리치료 환자 목록 출력  -->
+    <select id="selectPrintPatientList" resultType="com.duzon.lulu.service.MSC.MSC_060000.model.Prescription">
+        SELECT a.mdtr_hope_date
+            , a.pid
+            , (SELECT CONCAT(pt_nm, nm_dscm_dvcd) FROM hooptbaim WHERE pid = a.pid) as pt_nm
+            , (SELECT user_nm FROM cfgwuserm WHERE usid = a.rcps_id LIMIT 1) AS rcps_nm
+            , a.prsc_nm
+        FROM medrhbpcn a, mshresltn b
+        WHERE b.pid = a.pid
+        AND a.prsc_date = b.prsc_date
+        AND a.prsc_sqno = b.prsc_sqno
+        AND a.prsc_prgr_stat_cd = 'N'
+        AND b.del_yn = 'N'
+        AND b.rptg_dt IS NOT NULL
+        AND a.mdtr_hope_date BETWEEN #{from}::date AND #{to}::date
+        ORDER BY a.mdtr_hope_date, b.pid, b.trtm_strt_dt
+    </select>
+
+    <!--  물리치료대장 출력  -->
+    <select id="selectPrintMdtr" resultType="com.duzon.lulu.service.MSC.MSC_060000.model.Prescription">
+        SELECT a.mdtr_hope_date
+            , TO_CHAR(b.trtm_strt_dt, 'HH24:MM:SS') as trtm_strt_dt
+            , TO_CHAR(b.trtm_end_dt, 'HH24:MM:SS') AS trtm_end_dt
+            , (SELECT user_nm FROM cfgwuserm WHERE usid = a.rcps_id LIMIT 1) AS rcps_nm
+            , a.prsc_nm
+            , coalesce(b.mdtr_opnn, '') AS mdtr_opnn
+            , (SELECT user_nm FROM cfgwuserm WHERE usid = a.prsc_dr_id limit 1) AS prsc_dr_nm
+            , a.pid
+        FROM medrhbpcn a, mshresltn b
+        WHERE a.pid IN
+                    <foreach collection="patientList" item="pid" open="(" separator="," close=")">
+                        #{pid}
+                    </foreach>
+        AND b.pid = a.pid
+        AND a.prsc_date = b.prsc_date
+        AND a.prsc_sqno = b.prsc_sqno
+        AND a.prsc_prgr_stat_cd = 'N'
+        AND b.del_yn = 'N'
+        AND b.rptg_dt IS NOT NULL
+        ORDER BY a.mdtr_hope_date, b.pid, b.trtm_strt_dt
+    </select>
+</mapper>

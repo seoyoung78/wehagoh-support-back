@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.MSC_090000.mapper.MSC_090200Mapper">
+    <!--  검체코드 SET 목록 조회  -->
+    <select id="selectSpcmSetList" resultType="com.duzon.lulu.service.MSC.MSC_090000.model.SpcmCtrn">
+        SELECT mscspccdm.spcm_cd
+            , mscspccdm.use_yn AS spcm_use_yn
+            , mscspccdm.spcm_labl_nm
+            , mscspccdm.spcm_nm
+            , mscspccdm.ctnr_cd
+            , COALESCE(mscspccdm.spcm_expl, '') AS spcm_expl
+            , mscctncdm.use_yn AS ctnr_use_yn
+            , mscctncdm.ctnr_labl_nm
+            , mscctncdm.ctnr_nm
+            , mscctncdm.ctnr_colr
+        FROM mscspccdm
+        LEFT OUTER JOIN mscctncdm ON mscspccdm.ctnr_cd = mscctncdm.ctnr_cd
+        <if test='keyword != null and !keyword.isEmpty()'>
+        WHERE <choose>
+                <when test='searchType != null and searchType.equals("1")'>
+                    mscspccdm.spcm_cd ILIKE CONCAT('%', #{keyword}, '%')
+                    OR mscspccdm.spcm_labl_nm ILIKE CONCAT('%', #{keyword}, '%')
+                    OR mscspccdm.spcm_nm ILIKE CONCAT('%', #{keyword}, '%')
+                </when>
+                <otherwise>
+                    mscctncdm.ctnr_cd ILIKE CONCAT('%', #{keyword}, '%')
+                    OR mscctncdm.ctnr_labl_nm ILIKE CONCAT('%', #{keyword}, '%')
+                    OR mscctncdm.ctnr_nm ILIKE CONCAT('%', #{keyword}, '%')
+                </otherwise>
+            </choose>
+        </if>
+        ORDER BY mscspccdm.spcm_cd
+    </select>
+
+    <!--  용기 목록 조회  -->
+    <select id="selectCtnrList" resultType="com.duzon.lulu.service.MSC.MSC_090000.model.CommonData">
+        SELECT ctnr_cd AS value
+            , ctnr_labl_nm AS text
+            , ctnr_nm
+            , ctnr_colr
+            , use_yn
+        FROM mscctncdm
+        ORDER BY ctnr_cd
+    </select>
+
+    <!--  검체 이력 저장  -->
+    <insert id="insertSpcmHistory" parameterType="com.duzon.lulu.service.MSC.MSC_090000.model.SpcmCtrn">
+        INSERT INTO mscspccdh
+            (spcm_cd, frst_rgst_usid, last_updt_usid, use_yn, ctnr_cd, spcm_labl_nm, spcm_nm, spcm_expl)
+        SELECT
+            spcm_cd, #{portal_id}, #{portal_id}, use_yn, ctnr_cd, spcm_labl_nm, spcm_nm, spcm_expl
+        FROM mscspccdm
+        WHERE spcm_cd = #{spcm_cd}
+    </insert>
+
+    <!--  검체 저장  -->
+    <insert id="saveSpcmSet" parameterType="com.duzon.lulu.service.MSC.MSC_090000.model.SpcmCtrn">
+        INSERT INTO mscspccdm
+            (spcm_cd, frst_rgst_usid, last_updt_usid, use_yn, ctnr_cd, spcm_labl_nm, spcm_nm, spcm_expl)
+        VALUES
+            (TRIM(#{spcm_cd}), #{portal_id}, #{portal_id}, #{spcm_use_yn}, #{spcm_ctnr_cd}, TRIM(#{spcm_labl_nm}), TRIM(#{spcm_nm}), #{spcm_expl})
+        ON CONFLICT (spcm_cd) DO UPDATE SET
+            last_updt_usid = #{portal_id}
+            , last_updt_dt = NOW()
+            , use_yn = #{spcm_use_yn}
+            , ctnr_cd = #{spcm_ctnr_cd}
+            , spcm_labl_nm = TRIM(#{spcm_labl_nm})
+            , spcm_nm = TRIM(#{spcm_nm})
+            , spcm_expl = #{spcm_expl}
+    </insert>
+
+    <!--  용기 이력 저장  -->
+    <insert id="insertCtnrHistory" parameterType="com.duzon.lulu.service.MSC.MSC_090000.model.SpcmCtrn">
+        INSERT INTO mscctncdh
+            (ctnr_cd, frst_rgst_usid, last_updt_usid, use_yn, ctnr_labl_nm, ctnr_nm, ctnr_colr)
+        SELECT
+            ctnr_cd, #{portal_id}, #{portal_id}, use_yn, ctnr_labl_nm, ctnr_nm, ctnr_colr
+        FROM mscctncdm
+        WHERE ctnr_cd = #{ctnr_cd}
+    </insert>
+
+    <!--  용기 저장  -->
+    <insert id="saveCtnr" parameterType="com.duzon.lulu.service.MSC.MSC_090000.model.SpcmCtrn">
+        INSERT INTO mscctncdm
+            (ctnr_cd, frst_rgst_usid, last_updt_usid, use_yn, ctnr_labl_nm, ctnr_nm, ctnr_colr)
+        VALUES
+            (TRIM(#{ctnr_cd}), #{portal_id}, #{portal_id}, #{ctnr_use_yn}, TRIM(#{ctnr_labl_nm}), TRIM(#{ctnr_nm}), #{ctnr_colr})
+        ON CONFLICT (ctnr_cd) DO UPDATE SET
+            last_updt_usid = #{portal_id}
+            , last_updt_dt = NOW()
+            , use_yn = #{ctnr_use_yn}
+            , ctnr_labl_nm = TRIM(#{ctnr_labl_nm})
+            , ctnr_nm = TRIM(#{ctnr_nm})
+            , ctnr_colr = #{ctnr_colr}
+    </insert>
+
+</mapper>

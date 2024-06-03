@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.ExternalInterface.Saerom.mapper.SaeromMapper">
+
+    <select id="getExmprsList" resultType="com.duzon.lulu.service.MSC.ExternalInterface.Saerom.model.ExmprsData">
+        select
+            distinct msl.spcm_no as spcm_no,
+            msl.pid as pid,
+            msl.exmn_date as exmn_date,
+            patient.pt_nm as pt_nm,
+            patient.sex_cd as sex_cd,
+            TO_CHAR((CASE WHEN (COALESCE(patient.pt_srrn, '') = '' OR COALESCE(patient.pt_frrn, '') = '') THEN NULL
+                                  WHEN SUBSTRING(patient.pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', patient.pt_frrn)
+                                  WHEN SUBSTRING(patient.pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', patient.pt_frrn)
+                                  ELSE CONCAT('20', patient.pt_frrn)
+                END)::date,'yyyymmdd') as dobr,
+            mono.fn_get_age(CASE WHEN (COALESCE(patient.pt_srrn, '') = '' OR COALESCE(patient.pt_frrn, '') = '') THEN NULL
+                                         WHEN SUBSTRING(patient.pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', patient.pt_frrn)
+                                         WHEN SUBSTRING(patient.pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', patient.pt_frrn)
+                                         ELSE CONCAT('20', patient.pt_frrn)
+                END, '2') as age_cd
+        from
+            mslexmrsn msl
+            ,hooptbaim patient
+        where msl.pid = patient.pid
+            and to_char(msl.exmn_date,'YYYY-MM-DD') between #{exmn_date_from} and #{exmn_date_to}
+            <if test="spcm_no != null and spcm_no != '' ">
+                and msl.spcm_no = #{spcm_no}
+            </if>
+            <if test="exmn_cd != null and exmn_cd.size != 0 ">
+                and msl.exmn_cd IN (<foreach collection="exmn_cd" separator="," item="item">#{item}</foreach>)
+            </if>
+            <if test="pid != null and pid != '' ">
+                and msl.pid = #{pid}
+            </if>
+<!--        select-->
+<!--            med.pid,-->
+<!--            med.prsc_date,-->
+<!--            CONCAT(MAX(ptbain.pt_nm), COALESCE(MAX(ptbain.nm_dscm_dvcd), '')) as pt_nm,-->
+<!--            MAX(ptbain.sex_cd) as sex_cd,-->
+<!--            MAX(ptbain.dobr) as dobr,-->
+<!--            mono.FN_GET_AGE(MAX(ptbain.dobr), '2') AS age_cd,-->
+<!--            med.spcm_no_1 as spcm_no_1-->
+<!--        from meddttpsn med-->
+<!--        left outer join mslexmrsn msl-->
+<!--            on med.spcm_no_1 = msl.spcm_no-->
+<!--        left outer join hooptbaim ptbain-->
+<!--            on med.pid = ptbain.pid-->
+<!--        where to_char(med.exmn_hope_date,'YYYY-MM-DD') between #{prsc_date_from} and #{prsc_date_to}-->
+<!--            and med.prsc_clsf_cd = 'C1'-->
+<!--            and med.prsc_prgr_stat_cd in ('E','M')-->
+<!--            and med.entd_exmn_yn != 'Y'-->
+<!--            and med.dc_yn != 'Y'-->
+<!--            and spcm_no_1 != '' and spcm_no_1 is not null-->
+<!--            <if test="spcm_no != null and spcm_no != '' ">-->
+<!--                and med.spcm_no_1 = #{spcm_no}-->
+<!--            </if>-->
+<!--            <if test="exmn_cd != null and exmn_cd.size != 0 ">-->
+<!--                and msl.exmn_cd IN (<foreach collection="exmn_cd" separator="," item="item">#{item}</foreach>)-->
+<!--            </if>-->
+<!--        group by med.pid, med.prsc_date, med.spcm_no_1, PTBAIN.pt_nm-->
+<!--        order by med.prsc_date, med.spcm_no_1, med.pid, PTBAIN.pt_nm-->
+
+    </select>
+
+    <select id="getLmerstList" resultType="com.duzon.lulu.service.MSC.ExternalInterface.Saerom.model.LmerstData">
+
+        select
+            msl.exmn_cd ,
+            msl.rslt_prgr_stat_cd as state,
+            COALESCE(msl.exmn_rslt_valu, '') as exmn_rslt_valu ,
+            msl.spcm_no ,
+            msln.spcm_cd ,
+            msc.spcm_nm
+        from
+            mslexmrsn msl
+            ,mslspcprn msln
+            ,mscspccdm msc
+        where msl.spcm_no = msln.spcm_no
+            and msln.spcm_cd = msc.spcm_cd
+            and msl.spcm_no = #{spcm_no}
+            and msl.exmn_cd in (<foreach collection="exmn_cd" separator="," item="item">#{item}</foreach>)
+    </select>
+
+    <select id="getCrexmprsntData" resultType="com.duzon.lulu.service.MSC.ExternalInterface.Saerom.model.CrexmprsntData">
+        SELECT
+            EXMPRS.pid as pid,
+            EXMPRS.prsc_date as prsc_date,
+            EXMPRS.spcm_no_1 as spcm_no_1,
+            EXMPRS.prsc_sqno as prsc_sqno,
+            EXMPRS.prsc_cd   as prsc_cd,
+            PTBAIN.sex_cd as sex_cd,
+            (CASE WHEN COALESCE(TO_CHAR((CASE WHEN (COALESCE(PTBAIN.pt_srrn, '') = '' OR COALESCE(PTBAIN.pt_frrn, '') = '') THEN NULL
+                                  WHEN SUBSTRING(PTBAIN.pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', PTBAIN.pt_frrn)
+                                  WHEN SUBSTRING(PTBAIN.pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', PTBAIN.pt_frrn)
+                                  ELSE CONCAT('20', PTBAIN.pt_frrn)
+                END)::date,'yyyy-mm-dd'), '') = '' THEN ''
+            ELSE mono.FN_GET_AGE(CASE WHEN (COALESCE(PTBAIN.pt_srrn, '') = '' OR COALESCE(PTBAIN.pt_frrn, '') = '') THEN NULL
+                                         WHEN SUBSTRING(PTBAIN.pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', PTBAIN.pt_frrn)
+                                         WHEN SUBSTRING(PTBAIN.pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', PTBAIN.pt_frrn)
+                                         ELSE CONCAT('20', PTBAIN.pt_frrn)
+                END, '2') END) AS age_cd  -- 만나이
+        FROM mslexmrsn LMERST -- [TB] 진단검사결과내역
+            LEFT OUTER JOIN meddttpsn EXMPRS  -- [TB] 검사처방
+                on LMERST.spcm_no = EXMPRS.spcm_no_1
+                and LMERST.rslt_sqno = EXMPRS.prsc_sqno
+            LEFT OUTER JOIN hooptbaim PTBAIN                     -- [TB] 환자기본정보마스터
+                ON EXMPRS.pid = PTBAIN.pid                     -- [CL] 환자등록번호
+        WHERE
+                LMERST.spcm_no = #{spcm_no}
+                AND LMERST.rslt_sqno = #{rslt_sqno}
+                AND EXMPRS.prsc_clsf_cd = 'C1'
+                AND EXMPRS.entd_exmn_yn != 'Y'
+                AND EXMPRS.dc_yn != 'Y'
+        GROUP BY exmprs.pid, EXMPRS.prsc_date, EXMPRS.spcm_no_1, EXMPRS.prsc_sqno, PTBAIN.sex_cd,
+                (CASE WHEN COALESCE(TO_CHAR((CASE WHEN (COALESCE(PTBAIN.pt_srrn, '') = '' OR COALESCE(PTBAIN.pt_frrn, '') = '') THEN NULL
+                                  WHEN SUBSTRING(PTBAIN.pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', PTBAIN.pt_frrn)
+                                  WHEN SUBSTRING(PTBAIN.pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', PTBAIN.pt_frrn)
+                                  ELSE CONCAT('20', PTBAIN.pt_frrn)
+                END)::date,'yyyymmdd')
+    </select>
+
+    <select id="getCreatinineData" resultType="int">
+        SELECT count(*)
+        FROM mslexmrsn
+            where exmn_cd = 'D2280'
+            and spcm_no = #{spcm_no}
+            and rslt_sqno = #{rslt_sqno}
+    </select>
+
+    <update id="setLmerstData">
+        UPDATE mslexmrsn -- [TB] 진단검사결과내역
+        SET exmn_rslt_valu = #{exmn_rslt_valu}, -- 검사결과값
+            exmn_eqpm_cd = #{eqmp_cd}, -- 장비코드
+            rslt_prgr_stat_cd = 'M',            -- 진행상태값
+            last_updt_usid = #{portal_id},           -- 사용자ID
+            last_updt_dt = now()                   -- 업데이트 일시
+        WHERE spcm_no = #{spcm_no}     -- 바코드 번호
+            AND rslt_sqno = #{rslt_sqno} -- 처방 순번
+<!--            AND rslt_prgr_stat_cd IN ('E', 'M') &#45;&#45; 결과진행상태코드(E: 검사실시 ,위탁의뢰(미전송) / M: 위탁의뢰(전송),회신, 보고대기)-->
+            AND rslt_prgr_stat_cd IN ('E')
+    </update>
+
+    <update id="setCrexmprsntStateUpdate">
+        UPDATE meddttpsn
+        SET
+            prsc_prgr_stat_cd = 'M',
+            iptn_dt = now(),
+            iptn_prsn_id = #{usid},
+            rptg_dt = now(),
+            rptr_id = #{usid},
+            last_updt_usid = #{usid},
+            last_updt_dt = now()
+        WHERE pid = #{pid}
+            and prsc_date = #{prsc_date}::date
+            and spcm_no_1 = #{spcm_no_1}
+            and prsc_sqno = #{prsc_sqno}
+    </update>
+
+    <!-- 검사 결과 이력 생성 -->
+    <insert id="crtnExmnRsltHstr" parameterType="map">
+        insert into mslexmrsh
+        (
+        rcpn_no, -- 마이그용
+        spcm_no,
+        rslt_sqno,
+        frst_rgst_usid,
+        frst_rgst_dt,
+        last_updt_usid,
+        last_updt_dt,
+        del_yn,
+        pid,
+        prsc_date,
+        prsc_sqno,
+        prsc_cd,
+        exmn_cd,
+        hold_resn_cd,
+        hold_rgst_dt,
+        hold_rgst_usid,
+        mark_seq,
+        exmn_eqpm_cd,
+        rslt_updt_yn,
+        sms_trms_yn,
+        spsb_dr_iptn_yn,
+        spsb_dr_usid,
+        rptg_dt,
+        rptg_usid,
+        img_rslt_yn,
+        rslt_type_dvsn,
+        exmn_rslt_valu,
+        txt_rslt_valu,
+        rslt_prgr_stat_cd,
+        rfvl_lwlm_valu,
+        rfvl_uplm_valu,
+        rslt_unit_dvsn,
+        rslt_rgst_dt,
+        rslt_rgst_usid,
+        set_yn
+        )
+        select
+        rcpn_no,
+        spcm_no,
+        rslt_sqno,
+        #{usid},
+        now(),
+        #{usid},
+        now(),
+        del_yn,
+        pid,
+        prsc_date,
+        prsc_sqno,
+        prsc_cd,
+        exmn_cd,
+        hold_resn_cd,
+        hold_rgst_dt,
+        hold_rgst_usid,
+        mark_seq,
+        exmn_eqpm_cd,
+        rslt_updt_yn,
+        sms_trms_yn,
+        spsb_dr_iptn_yn,
+        spsb_dr_usid,
+        rptg_dt,
+        rptg_usid,
+        img_rslt_yn,
+        rslt_type_dvsn,
+        exmn_rslt_valu,
+        txt_rslt_valu,
+        rslt_prgr_stat_cd,
+        rfvl_lwlm_valu,
+        rfvl_uplm_valu,
+        rslt_unit_dvsn,
+        rslt_rgst_dt,
+        rslt_rgst_usid,
+        set_yn
+        from mslexmrsn
+        where
+        spcm_no = #{spcm_no}
+        and	rslt_sqno = #{rslt_sqno}
+    </insert>
+
+
+	<!--
+	* 새롬 검사결과 조회 API, saerom/getExRsltData 컨버젼.
+	* 작성자 : 강현구
+	* 최종 수정일 : 2024-04-16
+	 -->
+	<select id="rtrvRptgList" parameterType="HashMap" resultType="HashMap">
+    SELECT exmn_cd AS code,
+           COALESCE(exmn_rslt_1, exmn_rslt_2) AS rlst --rslt의 오타아님(아마란스 때 정해진 응답필드명)
+    FROM  mscemnrsn
+    WHERE pid = #{pid}
+    AND   rcpn_no = #{rcpn_no}
+    AND   NOT (exmn_rslt_1 is null and exmn_rslt_2 is null) --null 결과값 제외.
+    </select>
+</mapper>

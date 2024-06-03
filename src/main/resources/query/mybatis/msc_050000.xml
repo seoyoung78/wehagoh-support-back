@@ -1,0 +1,1189 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.MSC_050000.mapper.MSC_050000Mapper">
+    <!--  내시경 기초정보 공통코드 조회  -->
+    <select id="selectBasicCodeList" resultType="com.duzon.lulu.service.MSC.MSC_050000.model.CommonCode">
+        SELECT cmcd_clsf_cd, cmcd_cd, cmcd_nm, cmcd_figr_valu1, cmcd_expl
+        FROM mono.icmcomcld
+        WHERE current_date BETWEEN cmcd_apdy AND cmcd_endy
+            AND cmcd_clsf_cd in ('CS5009', 'CS5020', 'CS5010'
+        , 'CS5011', 'CS5012', 'CS5007', 'CS5003', 'CS5001'
+        , 'CS5002', 'CS5008', 'CS5006', 'CS5004', 'CS5005'
+        , 'CS5013', 'CS5014', 'CS5015', 'CS5016', 'CS5017'
+        , 'CS5018', 'CS5019')
+        ORDER BY cmcd_clsf_cd, cmcd_sort_seq
+    </select>
+
+    <!--  내시경 결과기록 공통코드 조회  -->
+    <select id="selectResultCodeList" resultType="com.duzon.lulu.service.MSC.MSC_050000.model.CommonCode">
+        SELECT cmcd_clsf_cd, cmcd_cd, cmcd_nm, cmcd_figr_valu1, cmcd_expl
+        FROM mono.icmcomcld
+        WHERE current_date BETWEEN cmcd_apdy AND cmcd_endy
+            AND cmcd_clsf_cd in ('CS7004', 'CS7018', 'CS7005'
+        , 'CS7006', 'CS7008', 'CS7009', 'CS7010', 'CS7011'
+        , 'CS7012', 'CS7014', 'CS7015', 'CS7002', 'CS7013', 'CS7019'
+        , 'CS7020', 'CS7016', 'CS7017')
+        ORDER BY cmcd_clsf_cd, cmcd_sort_seq
+    </select>
+
+    <!--  내시경 검사 치료부위코드 조회  -->
+    <select id="selectSiteCd" resultType="string">
+        SELECT mdtr_site_cd
+        FROM meddttpsn
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+    </select>
+
+    <!--  내시경 검사 일시 및 판독 관련 데이터 조회  -->
+    <select id="selectExmnInfo" resultType="com.duzon.lulu.service.MSC.MSC_050000.model.ExmnInfo">
+        SELECT
+            coalesce((select x.user_nm from cfgwuserm x where x.usid = e.iptn_dr_usid limit 1), '') as iptn_prsn_nm
+            , coalesce((select x.sign_lctn from cfgwuserm x where x.usid = e.iptn_dr_usid limit 1), '') as iptn_sign_lctn
+            , e.cndt_dt
+            , e.iptn_dt
+        FROM mseexmrsn e
+        WHERE e.pid = #{pid}
+            AND e.prsc_date = CAST(#{prsc_date} AS date)
+            AND e.prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+    </select>
+
+    <!--    기초정보 조회 -->
+    <select id="selectBasicInfo" resultType="com.duzon.lulu.service.MSC.MSC_050000.model.BasicInfoDetail">
+        SELECT a.pid
+            , a.ends_rcrd_sqno
+            , b.ends_fndt_info_sqno
+            , CASE
+                WHEN b.ends_rcrd_sqno IS NOT NULL THEN '2' -- 테이블과의 조인이 성공한 경우
+                ELSE '1' -- 테이블과의 조인이 실패한 경우
+            END AS hstr_stat_cd
+            , b.frst_rgst_dt
+            , b.frst_rgst_usid
+            , b.exmn_nm
+            , b.pt_clsf
+            , coalesce((select x.user_nm from cfgwuserm x where x.usid = b.fndt_info_rcrd_usid limit 1), '') as fndt_info_rcrd_usid
+            , coalesce((select x.sign_lctn from cfgwuserm x where x.usid = b.fndt_info_rcrd_usid limit 1), '') as fndt_info_rcrd_sign_lctn
+            , b.teth_stat
+            , b.bpre_cd
+            , b.ctdn_acpn_yn
+            , b.etbd_stat
+            , b.npo_en
+            , b.main_hods
+            , b.main_hods_cnts
+            , b.alrg_en
+            , b.idct_1
+            , b.idct_2
+            , b.mdcn_tkng
+            , b.mdcn_tkng_optn_1
+            , b.mdcn_tkng_cnts
+            , b.atsm_cd
+            , b.past_sdef
+            , b.loca_orcv_anst_use_yn
+            , b.atcl_tkng_stop_yn
+            , b.atcl_tkng_stop_nody
+            , b.ends_clsf_cd
+            , b.slpn_ends_yn
+            , b.slpn_drvt_mdcn_cd
+            , b.slpn_drvt_mdcn_dosg
+            , b.slpn_drvt_mdcn_cnts
+            , b.exmn_o2sa_mnvl
+            , b.exmn_o2sa_mxvl
+            , b.rcvr_o2sa_mnvl
+            , b.rcvr_o2sa_mxvl
+            , b.oxyg_supl
+            , b.exmn_bf_sytc_bp
+            , b.exmn_bf_datc_bp
+            , b.exmn_bf_plst
+            , b.exmn_bf_rspr_cnt
+            , b.exmn_af_sytc_bp
+            , b.exmn_af_datc_bp
+            , b.exmn_af_plst
+            , b.exmn_af_rspr_cnt
+            , b.sedt_evlt_cd
+            , b.sedt_evlt_cnts
+            , b.sedt_rctn_cd
+            , b.pt_symp_cd
+            , b.pt_symp_cnts
+            , b.slpn_evlt_cd
+            , b.slpn_evlt_cnts
+            , b.chot_bass_cd
+            , b.ref_matr
+        FROM mseexmrsn a
+        LEFT JOIN msefndifn b ON a.pid = b.pid
+            AND a.ends_rcrd_sqno = b.ends_rcrd_sqno
+            AND a.del_yn ='N'
+            AND b.del_yn = 'N'
+            AND b.last_yn = 'Y'
+        WHERE a.pid = #{pid}
+            AND a.prsc_date = CAST(#{prsc_date} AS date)
+            AND a.prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+    </select>
+
+    <!--    결과기록 조회 -->
+    <select id="selectResultRecord" resultType="com.duzon.lulu.service.MSC.MSC_050000.model.ResultRecordDetail">
+        SELECT a.pid
+            , a.ends_rcrd_sqno
+            , b.ends_rslt_rcrd_sqno
+            , CASE
+                WHEN b.ends_rcrd_sqno IS NOT NULL THEN '2' -- 테이블과의 조인이 성공한 경우
+                ELSE '1' -- 테이블과의 조인이 실패한 경우
+            END AS hstr_stat_cd
+            , b.frst_rgst_dt
+            , b.frst_rgst_usid
+            , b.exmn_nm
+            , b.exmn_date
+            , b.dtrm_date
+            , b.ends_dr_nm
+            , b.gscn_pt_yn
+            , b.stmc_bctr_exmn_rslt
+            , b.clo_cd
+            , b.trtm_mdtr_cd
+            , b.trtm_mdtr_cnts
+            , b.exsn_prcd_actg_mthd
+            , b.cmpc_yn
+            , b.cmpc_cnts
+            , b.cmpc_trtm_mthd
+            , b.cmpc_prgr
+            , b.cncr_mdex_advc_matr
+            , b.advc_matr
+            , b.advc_matr_cnts
+            , b.etnl_obsr_opnn
+            , b.dre_opnn
+            , b.obsr_inrt_time_ms
+            , b.obsr_exmn_end_time_ms
+            , b.obsr_recl_time_ms
+            , b.bpre_dgre_lc
+            , b.bpre_dgre_tc
+            , b.bpre_dgre_rc
+            , b.rslt_opnn_1
+            , b.rslt_opnn_2
+            , b.rslt_opnn_3
+            , b.plyp_exsn_prcd_actg_yn
+        FROM mseexmrsn a
+        LEFT JOIN mseexmrcn b ON a.pid = b.pid
+            AND a.ends_rcrd_sqno = b.ends_rcrd_sqno
+            AND a.del_yn ='N'
+            AND b.del_yn = 'N'
+            AND b.last_yn = 'Y'
+        WHERE a.pid = #{pid}
+            AND a.prsc_date = CAST(#{prsc_date} AS date)
+            AND a.prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+    </select>
+
+<!--    관찰소견 조회-->
+    <select id="selectObsrOpnnList" resultType="com.duzon.lulu.service.MSC.MSC_050000.model.ObsrOpnnDetail">
+        SELECT a.ends_rslt_rcrd_sqno
+            , b.pid
+            , b.ends_obsr_opnn_sqno
+            , b.obsr_opnn_site_1
+            , b.obsr_opnn_site_2
+            , b.obsr_opnn_cnts
+            , b.obsr_opnn
+            , b.tisu_exmn_yn
+            , b.tisu_exmn_noit
+            , b.tisu_exmn_rslt_1
+            , b.tisu_exmn_rslt_2
+        FROM mseexmrcn a
+        LEFT JOIN mseexmopn b ON a.pid = b.pid AND a.ends_rslt_rcrd_sqno = b.ends_rslt_rcrd_sqno
+        WHERE b.pid = #{pid}
+            AND b.ends_rslt_rcrd_sqno = #{ends_rslt_rcrd_sqno}
+            AND a.del_yn = 'N'
+            AND a.last_yn = 'Y'
+    </select>
+
+<!--    [History 조회] -->
+    <!--  내시경 기초정보 히스토리 조회  -->
+    <select id="selectBasicHistory" resultType="com.duzon.lulu.service.MSC.MSC_050000.model.BasicInfo">
+        SELECT b.pid
+            , b.ends_rcrd_sqno
+            , b.ends_fndt_info_sqno
+            , b.last_updt_dt
+            , coalesce((select x.user_nm from cfgwuserm x where x.usid = b.last_updt_usid limit 1), '') || '(' || b.last_updt_usid || ')'  as last_updt_usid
+            , CASE
+            WHEN EXISTS(SELECT 1 FROM cmmdgsgnh s WHERE s.dgsg_key = b.dgsg_no)
+            THEN 'Y'
+            ELSE 'N'
+            END AS sign_yn
+            , b.hstr_stat_cd
+            , b.exmn_nm
+            , coalesce((select x.user_nm from cfgwuserm x where x.usid = b.fndt_info_rcrd_usid limit 1), '') as fndt_info_rcrd_usid
+            , CASE WHEN b.ctdn_acpn_yn = 'Y' THEN '예'
+            ELSE '아니오'
+            END AS ctdn_acpn_yn
+            , b.main_hods_cnts
+            , b.mdcn_tkng_cnts
+            , b.loca_orcv_anst_use_yn
+            , b.atcl_tkng_stop_yn
+            , b.atcl_tkng_stop_nody
+            , b.slpn_ends_yn
+            , b.slpn_drvt_mdcn_dosg
+            , b.exmn_o2sa_mnvl
+            , b.exmn_o2sa_mxvl
+            , b.rcvr_o2sa_mnvl
+            , b.rcvr_o2sa_mxvl
+            , b.oxyg_supl_mnvl
+            , b.oxyg_supl_mxvl
+            , b.exmn_bf_sytc_bp
+            , b.exmn_bf_datc_bp
+            , b.exmn_bf_plst
+            , b.exmn_bf_rspr_cnt
+            , b.exmn_af_sytc_bp
+            , b.exmn_af_datc_bp
+            , b.exmn_af_plst
+            , b.exmn_af_rspr_cnt
+            , b.sedt_evlt_cnts
+            , b.pt_symp_cnts
+            , b.slpn_evlt_cnts
+            , b.ref_matr
+            , b.oxyg_supl
+            , b.pt_clsf_nm
+            , b.teth_stat_nm
+            , b.bpre_cd_nm
+            , b.etbd_stat_nm
+            , b.npo_en_nm
+            , b.main_hods_nm
+            , b.alrg_en_nm
+            , b.idct_nm_1
+            , b.idct_nm_2
+            , b.mdcn_tkng_nm
+            , b.mdcn_tkng_optn_nm_1
+            , b.atsm_cd_nm
+            , b.past_sdef_nm
+            , b.ends_clsf_cd_nm
+            , b.slpn_drvt_mdcn_cd_nm
+            , b.sedt_evlt_cd_nm
+            , b.sedt_rctn_cd_nm
+            , b.pt_symp_cd_nm
+            , b.slpn_evlt_cd_nm
+            , b.chot_bass_cd_nm
+        FROM mseexmrsn a
+        JOIN msefndifn b ON a.pid = b.pid AND a.ends_rcrd_sqno = b.ends_rcrd_sqno
+        WHERE a.pid = #{pid}
+            AND a.prsc_date = CAST(#{prsc_date} AS date)
+            AND a.prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+            AND b.hstr_stat_cd IS NOT NULL
+        ORDER BY b.ends_rcrd_sqno DESC, b.ends_fndt_info_sqno DESC
+    </select>
+
+    <select id="selectRecordHistory" resultType="com.duzon.lulu.service.MSC.MSC_050000.model.ResultRecord">
+        SELECT b.pid
+            , b.ends_rcrd_sqno
+            , b.ends_rslt_rcrd_sqno
+            , b.last_updt_dt
+            , coalesce((select x.user_nm from cfgwuserm x where x.usid = b.last_updt_usid limit 1), '') || '(' || b.last_updt_usid || ')'  as last_updt_usid
+            , CASE
+            WHEN EXISTS(SELECT 1 FROM cmmdgsgnh s WHERE s.dgsg_key = b.dgsg_no)
+            THEN 'Y'
+            ELSE 'N'
+            END AS sign_yn
+            , b.hstr_stat_cd
+            , b.exmn_nm
+            , b.exmn_date
+            , b.dtrm_date
+            , b.ends_dr_nm
+            , b.gscn_pt_yn
+            , b.trtm_mdtr_cnts
+            , b.cmpc_yn
+            , b.cmpc_cnts
+            , b.cncr_mdex_advc_matr
+            , b.advc_matr_cnts
+            , b.obsr_inrt_time_ms
+            , b.obsr_exmn_end_time_ms
+            , b.obsr_recl_time_ms
+            , b.plyp_exsn_prcd_actg_yn
+            , b.stmc_bctr_exmn_rslt_nm
+            , b.clo_cd_nm
+            , b.trtm_mdtr_cd_nm
+            , b.exsn_prcd_actg_mthd_nm
+            , b.cmpc_cnts_nm
+            , b.cmpc_trtm_mthd_nm
+            , b.cmpc_prgr_nm
+            , b.advc_matr_nm
+            , b.etnl_obsr_opnn_nm
+            , b.dre_opnn_nm
+            , b.bpre_dgre_lc_nm
+            , b.bpre_dgre_tc_nm
+            , b.bpre_dgre_rc_nm
+            , b.rslt_opnn_nm_1
+            , b.rslt_opnn_nm_2
+            , b.rslt_opnn_nm_3
+        FROM mseexmrsn a
+        JOIN mseexmrcn b ON a.pid = b.pid AND a.ends_rcrd_sqno = b.ends_rcrd_sqno
+        WHERE a.pid = #{pid}
+            AND a.prsc_date = CAST(#{prsc_date} AS date)
+            AND a.prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+            AND b.hstr_stat_cd IS NOT NULL
+        ORDER BY b.ends_rcrd_sqno DESC, b.ends_rslt_rcrd_sqno DESC
+    </select>
+
+    <select id="selectObsrOpnnHistory" resultType="com.duzon.lulu.service.MSC.MSC_050000.model.ObsrOpnn">
+        SELECT c.pid
+            , c.ends_rslt_rcrd_sqno
+            , c.ends_obsr_opnn_sqno
+            , c.obsr_opnn_site_1
+            , c.obsr_opnn_site_2
+            , c.obsr_opnn_cnts
+            , c.obsr_opnn
+            , c.tisu_exmn_yn
+            , c.tisu_exmn_noit
+            , c.tisu_exmn_rslt_1
+            , c.tisu_exmn_rslt_2
+            , c.obsr_opnn_site_nm_1
+            , c.obsr_opnn_site_nm_2
+            , c.obsr_opnn_nm
+            , c.tisu_exmn_rslt_nm_1
+            , c.tisu_exmn_rslt_nm_2
+        FROM mseexmrsn a
+        JOIN mseexmrcn b ON a.pid = b.pid AND a.ends_rcrd_sqno = b.ends_rcrd_sqno
+        JOIN mseexmopn c ON b.pid = c.pid AND b.ends_rslt_rcrd_sqno = c.ends_rslt_rcrd_sqno
+        WHERE a.pid = #{pid}
+            AND a.prsc_date = CAST(#{prsc_date} AS date)
+            AND a.prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+            AND b.hstr_stat_cd IS NOT NULL
+        ORDER BY b.ends_rslt_rcrd_sqno DESC, c.ends_obsr_opnn_sqno DESC
+    </select>
+
+    <!--  [기초정보] 마지막 여부 업데이트 -->
+    <update id="updateBasicLastFlag">
+        UPDATE msefndifn
+        SET last_yn = 'N'
+        WHERE pid = #{pid}
+        AND ends_rcrd_sqno = #{basic_ends_rcrd_sqno}
+        AND last_yn = 'Y'
+    </update>
+
+    <!--  [결과기록] 마지막 여부 업데이트 -->
+    <update id="updateRecordLastFlag">
+        UPDATE mseexmrcn
+        SET last_yn = 'N'
+        WHERE pid = #{pid}
+        AND ends_rcrd_sqno = #{record_ends_rcrd_sqno}
+        AND last_yn = 'Y'
+    </update>
+
+    <!--    내시경 검사 결과테이블 upsert-->
+    <insert id="upsertResult" parameterType="java.util.HashMap">
+        INSERT INTO mseexmrsn
+        (
+            pid -- 환자등록번호
+            , prsc_date -- 처방일자
+            , prsc_sqno -- 처방 일련번호
+            , frst_rgst_usid -- 최초 등록 사용자id
+            , last_updt_usid -- 최종 수정 사용자id
+            , del_yn -- 삭제 여부
+            , cndt_usid -- 실시 사용자id
+            , cndt_dt -- 실시 일시
+            , rcpn_no -- 접수 번호
+            , prsc_cd -- 처방 코드
+            , prsc_clsf_cd -- 처방 분류 코드
+            , slip_cd -- slip 코드
+        )
+        SELECT
+            pid
+            , prsc_date
+            , prsc_sqno
+            , #{portal_id}
+            , #{portal_id}
+            , 'N'
+            , cndt_prsn_id -- 검사처방 테이블의 실시자ID
+            , cndt_dt -- 검사처방 테이블의 실시일시
+            , rcpn_no -- 접수 번호
+            , prsc_cd -- 처방 코드
+            , prsc_clsf_cd -- 처방 분류 코드
+            , slip_cd -- slip 코드
+        FROM meddttpsn
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+        ON CONFLICT (pid, prsc_date, prsc_sqno) DO UPDATE -- 검사 -> 검사취소 -> 검사하는 경우
+            SET last_updt_usid = EXCLUDED.last_updt_usid
+            , last_updt_dt = CURRENT_TIMESTAMP
+            , del_yn = 'N'
+            , cndt_usid = EXCLUDED.cndt_usid -- 검사처방 테이블의 실시자ID
+            , cndt_dt = EXCLUDED.cndt_dt -- 검사처방 테이블의 실시일시
+            , rcpn_no = EXCLUDED.rcpn_no -- 접수 번호
+            , prsc_cd = EXCLUDED.prsc_cd -- 처방 코드
+            , prsc_clsf_cd = EXCLUDED.prsc_clsf_cd -- 처방 분류 코드
+            , slip_cd = EXCLUDED.slip_cd -- 슬립 코드
+    </insert>
+
+    <!--    내시경 검사 결과 이력 테이블 insert-->
+    <insert id="insertResultHistory" parameterType="java.util.HashMap">
+        INSERT INTO mseexmrsh
+        (
+            pid -- 환자등록번호
+            , prsc_date -- 처방일자
+            , prsc_sqno -- 처방 일련번호
+            , frst_rgst_usid -- 최초 등록 사용자id
+            , last_updt_usid -- 최종 수정 사용자id
+            , del_yn -- 삭제 여부
+            , ends_rcrd_sqno -- 내시경 기록 일련번호
+            , cndt_usid -- 실시 사용자id
+            , cndt_dt -- 실시 일시
+            , iptn_dr_usid -- 판독 의사 사용자id
+            , iptn_dt -- 판독 일시
+            , rptg_usid -- 보고 사용자id
+            , rptg_dt -- 보고 일시
+            , rcpn_no -- 접수 번호
+            , prsc_cd -- 처방 코드
+            , prsc_clsf_cd -- 처방 분류 코드
+            , slip_cd -- slip 코드
+        )
+        SELECT
+            pid
+            , prsc_date
+            , prsc_sqno
+            , #{portal_id}
+            , #{portal_id}
+            , del_yn
+            , ends_rcrd_sqno
+            , cndt_usid
+            , cndt_dt
+            , iptn_dr_usid
+            , iptn_dt
+            , rptg_usid
+            , rptg_dt
+            , rcpn_no
+            , prsc_cd
+            , prsc_clsf_cd
+            , slip_cd
+        FROM mseexmrsn
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+    </insert>
+
+    <!--    내시경 기초정보이력 테이블 insert-->
+    <insert id="insertBasicHistory" parameterType="java.util.HashMap">
+        INSERT INTO msefndifh
+        (
+            pid,
+            ends_rcrd_sqno,
+            ends_fndt_info_sqno,
+            frst_rgst_usid,
+            last_updt_usid,
+            del_yn,
+            pt_clsf,
+            fndt_info_rcrd_usid,
+            teth_stat,
+            bpre_cd,
+            ctdn_acpn_yn,
+            etbd_stat,
+            npo_en,
+            main_hods,
+            main_hods_cnts,
+            alrg_en,
+            idct_1,
+            idct_2,
+            mdcn_tkng,
+            mdcn_tkng_optn_1,
+            mdcn_tkng_cnts,
+            atsm_cd,
+            past_sdef,
+            loca_orcv_anst_use_yn,
+            atcl_tkng_stop_yn,
+            atcl_tkng_stop_nody,
+            ends_clsf_cd,
+            slpn_ends_yn,
+            slpn_drvt_mdcn_cd,
+            slpn_drvt_mdcn_dosg,
+            slpn_drvt_mdcn_cnts,
+            exmn_o2sa_mnvl,
+            exmn_o2sa_mxvl,
+            rcvr_o2sa_mnvl,
+            rcvr_o2sa_mxvl,
+            oxyg_supl,
+            exmn_bf_sytc_bp,
+            exmn_bf_datc_bp,
+            exmn_bf_plst,
+            exmn_bf_rspr_cnt,
+            exmn_af_sytc_bp,
+            exmn_af_datc_bp,
+            exmn_af_plst,
+            exmn_af_rspr_cnt,
+            sedt_evlt_cd,
+            sedt_evlt_cnts,
+            sedt_rctn_cd,
+            pt_symp_cd,
+            pt_symp_cnts,
+            slpn_evlt_cd,
+            slpn_evlt_cnts,
+            chot_bass_cd,
+            ref_matr
+        )
+        SELECT
+            pid,
+            ends_rcrd_sqno,
+            ends_fndt_info_sqno,
+            #{portal_id},
+            #{portal_id},
+            del_yn,
+            pt_clsf,
+            fndt_info_rcrd_usid,
+            teth_stat,
+            bpre_cd,
+            ctdn_acpn_yn,
+            etbd_stat,
+            npo_en,
+            main_hods,
+            main_hods_cnts,
+            alrg_en,
+            idct_1,
+            idct_2,
+            mdcn_tkng,
+            mdcn_tkng_optn_1,
+            mdcn_tkng_cnts,
+            atsm_cd,
+            past_sdef,
+            loca_orcv_anst_use_yn,
+            atcl_tkng_stop_yn,
+            atcl_tkng_stop_nody,
+            ends_clsf_cd,
+            slpn_ends_yn,
+            slpn_drvt_mdcn_cd,
+            slpn_drvt_mdcn_dosg,
+            slpn_drvt_mdcn_cnts,
+            exmn_o2sa_mnvl,
+            exmn_o2sa_mxvl,
+            rcvr_o2sa_mnvl,
+            rcvr_o2sa_mxvl,
+            oxyg_supl,
+            exmn_bf_sytc_bp,
+            exmn_bf_datc_bp,
+            exmn_bf_plst,
+            exmn_bf_rspr_cnt,
+            exmn_af_sytc_bp,
+            exmn_af_datc_bp,
+            exmn_af_plst,
+            exmn_af_rspr_cnt,
+            sedt_evlt_cd,
+            sedt_evlt_cnts,
+            sedt_rctn_cd,
+            pt_symp_cd,
+            pt_symp_cnts,
+            slpn_evlt_cd,
+            slpn_evlt_cnts,
+            chot_bass_cd,
+            ref_matr
+        FROM msefndifn
+        WHERE pid = #{pid} AND ends_rcrd_sqno = #{ends_rcrd_sqno}
+    </insert>
+
+    <!--    내시경 검사결과기록이력 테이블 insert-->
+    <insert id="insertRecordHistory" parameterType="java.util.HashMap">
+        INSERT INTO mseexmrch
+        (
+            pid,
+            ends_rslt_rcrd_sqno,
+            ends_obsr_opnn_sqno,
+            frst_rgst_usid,
+            last_updt_usid,
+            del_yn,
+            exmn_nm,
+            exmn_date,
+            dtrm_date,
+            ends_dr_nm,
+            gscn_pt_yn,
+            stmc_bctr_exmn_rslt,
+            clo_cd,
+            trtm_mdtr_cd,
+            trtm_mdtr_cnts,
+            exsn_prcd_actg_mthd,
+            cmpc_yn,
+            cmpc_cnts,
+            cmpc_trtm_mthd,
+            cmpc_prgr,
+            cncr_mdex_advc_matr,
+            advc_matr,
+            advc_matr_cnts,
+            etnl_obsr_opnn,
+            dre_opnn,
+            obsr_inrt_time_ms,
+            obsr_exmn_end_time_ms,
+            obsr_recl_time_ms,
+            bpre_dgre_LC,
+            bpre_dgre_TC,
+            bpre_dgre_RC,
+            rslt_opnn_1,
+            rslt_opnn_2,
+            rslt_opnn_3,
+            plyp_exsn_prcd_actg_yn
+        )
+        SELECT
+            pid,
+            ends_rslt_rcrd_sqno,
+            ends_obsr_opnn_sqno,
+            #{portal_id},
+            #{portal_id},
+            del_yn,
+            exmn_nm,
+            exmn_date,
+            dtrm_date,
+            ends_dr_nm,
+            gscn_pt_yn,
+            stmc_bctr_exmn_rslt,
+            clo_cd,
+            trtm_mdtr_cd,
+            trtm_mdtr_cnts,
+            exsn_prcd_actg_mthd,
+            cmpc_yn,
+            cmpc_cnts,
+            cmpc_trtm_mthd,
+            cmpc_prgr,
+            cncr_mdex_advc_matr,
+            advc_matr,
+            advc_matr_cnts,
+            etnl_obsr_opnn,
+            dre_opnn,
+            obsr_inrt_time_ms,
+            obsr_exmn_end_time_ms,
+            obsr_recl_time_ms,
+            bpre_dgre_LC,
+            bpre_dgre_TC,
+            bpre_dgre_RC,
+            rslt_opnn_1,
+            rslt_opnn_2,
+            rslt_opnn_3,
+            plyp_exsn_prcd_actg_yn
+        FROM mseexmrcn
+        WHERE pid = #{pid} AND ends_rcrd_sqno = #{ends_rcrd_sqno}
+    </insert>
+
+    <!--    결과-->
+    <update id="updateResultStatusToYByDel">
+        UPDATE mseexmrsn
+        SET last_updt_usid = #{portal_id}
+            , last_updt_dt = CURRENT_TIMESTAMP
+            , del_yn = 'Y'
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+    <resultMap id="partialResultMap" type="com.duzon.lulu.service.MSC.MSC_050000.model.ResultRecord">
+        <result property="dtrm_date" column="iptn_dt"/>
+        <result property="ends_dr_nm" column="ends_dr_nm"/>
+    </resultMap>
+
+    <select id="selectIptnInfo" resultMap="partialResultMap">
+        SELECT a.iptn_dt, coalesce((select x.user_nm from cfgwuserm x where x.usid = a.iptn_dr_usid limit 1), '') as ends_dr_nm
+        FROM mseexmrsn a
+        WHERE a.pid = #{pid}
+            AND a.prsc_date = CAST(#{prsc_date} AS date)
+            AND a.prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+    </select>
+
+<!--    결과 -->
+    <update id="updateSave">
+        UPDATE mseexmrsn
+        SET last_updt_dt = CURRENT_TIMESTAMP -- 최종 수정 일시
+        , last_updt_usid = #{portal_id} -- 최종 수정 사용자id
+        , iptn_dt = CURRENT_TIMESTAMP -- 판독 일시
+        , iptn_dr_usid = #{portal_id} -- 판독 의사 사용자id
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+    <update id="saveCancel">
+        UPDATE mseexmrsn
+        SET last_updt_dt = CURRENT_TIMESTAMP -- 최종 수정 일시
+        , last_updt_usid = #{portal_id} -- 최종 수정 사용자id
+        , iptn_dt = null -- 판독 일시
+        , iptn_dr_usid = null -- 판독 의사 사용자id
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+    <update id="updateReport">
+        UPDATE mseexmrsn
+        SET last_updt_dt = CURRENT_TIMESTAMP -- 최종 수정 일시
+        , last_updt_usid = #{portal_id} -- 최종 수정 사용자id
+        , rptg_dt = CURRENT_TIMESTAMP -- 보고 일시
+        , rptg_usid = #{portal_id} -- 보고 사용자id
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+    <update id="insertResult">
+        INSERT INTO mscemnrsn
+        (
+            frst_rgst_usid -- 최초 등록 사용자id
+            , last_updt_usid -- 최종 수정 사용자id
+            , pid -- 환자등록일시
+            , prsc_date -- 처방 일자
+            , prsc_sqno -- 처방 일련번호
+            , prsc_clsf_cd -- 처방 분류 코드
+            , slip_cd -- 슬립코드
+            , exmn_cd -- 검사 코드
+            , prsc_prgr_stat_cd -- 처방 친행 상태 코드: N
+            , cndt_usid -- 실시 사용자id
+            , cndt_dt -- 실시 일시
+            , rptg_dt -- 보고 일시
+            , rcpn_no -- 접수 번호
+            , exmn_hope_date -- 검사 희망 일시
+        )
+        SELECT
+            #{portal_id} -- 최초 등록 사용자id
+            , #{portal_id} -- 최종 수정 사용자id
+            , pid -- 환자등록일시
+            , prsc_date -- 처방 일자
+            , prsc_sqno -- 처방 일련번호
+            , prsc_clsf_cd -- 처방 분류 코드
+            , slip_cd -- 슬립코드
+            , prsc_cd -- 검사 코드
+            , 'N' -- 진방 친행 상태 코드: 최종보고(N)
+            , cndt_usid -- 실시 사용자id
+            , cndt_dt -- 실시 일시
+            , rptg_dt -- 보고 일시
+            , rcpn_no -- 접수 번호
+            , (SELECT exmn_hope_date
+                FROM meddttpsn
+                WHERE pid = #{pid}
+                    AND prsc_date = CAST(#{prsc_date} AS date)
+                    AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+                ) -- 검사 희망 일시
+        FROM mseexmrsn
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+    <update id="updateReportCancel">
+        UPDATE mseexmrsn
+        SET last_updt_dt = CURRENT_TIMESTAMP -- 최종 수정 일시
+        , last_updt_usid = #{portal_id} -- 최종 수정 사용자id
+        , rptg_dt = null -- 보고 일시
+        , rptg_usid = null -- 보고 사용자id
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+<!--    내시경 기초정보 insert -->
+    <insert id="insertBasicInfo" parameterType="java.util.HashMap">
+        INSERT INTO msefndifn
+        (
+            pid,
+            ends_rcrd_sqno,
+            frst_rgst_dt,
+            frst_rgst_usid,
+            last_updt_usid,
+            exmn_nm,
+            last_yn,
+            del_yn,
+            pt_clsf,
+            fndt_info_rcrd_usid,
+            teth_stat,
+            bpre_cd,
+            ctdn_acpn_yn,
+            etbd_stat,
+            npo_en,
+            main_hods,
+            main_hods_cnts,
+            alrg_en,
+            idct_1,
+            idct_2,
+            mdcn_tkng,
+            mdcn_tkng_optn_1,
+            mdcn_tkng_cnts,
+            atsm_cd,
+            past_sdef,
+            loca_orcv_anst_use_yn,
+            atcl_tkng_stop_yn,
+            atcl_tkng_stop_nody,
+            ends_clsf_cd,
+            slpn_ends_yn,
+            slpn_drvt_mdcn_cd,
+            slpn_drvt_mdcn_dosg,
+            slpn_drvt_mdcn_cnts,
+            exmn_o2sa_mnvl,
+            exmn_o2sa_mxvl,
+            rcvr_o2sa_mnvl,
+            rcvr_o2sa_mxvl,
+            oxyg_supl,
+            exmn_bf_sytc_bp,
+            exmn_bf_datc_bp,
+            exmn_bf_plst,
+            exmn_bf_rspr_cnt,
+            exmn_af_sytc_bp,
+            exmn_af_datc_bp,
+            exmn_af_plst,
+            exmn_af_rspr_cnt,
+            sedt_evlt_cd,
+            sedt_evlt_cnts,
+            sedt_rctn_cd,
+            pt_symp_cd,
+            pt_symp_cnts,
+            slpn_evlt_cd,
+            slpn_evlt_cnts,
+            chot_bass_cd,
+            ref_matr,
+            hstr_stat_cd,
+            dgsg_no,
+            pt_clsf_nm,
+            teth_stat_nm,
+            bpre_cd_nm,
+            etbd_stat_nm,
+            npo_en_nm,
+            main_hods_nm,
+            alrg_en_nm,
+            idct_nm_1,
+            idct_nm_2,
+            mdcn_tkng_nm,
+            mdcn_tkng_optn_nm_1,
+            atsm_cd_nm,
+            past_sdef_nm,
+            ends_clsf_cd_nm,
+            slpn_drvt_mdcn_cd_nm,
+            sedt_evlt_cd_nm,
+            sedt_rctn_cd_nm,
+            pt_symp_cd_nm,
+            slpn_evlt_cd_nm,
+            chot_bass_cd_nm
+        )
+        VALUES
+        (
+            #{basic.pid},
+            #{basic.ends_rcrd_sqno},
+            COALESCE(NULLIF(#{basic.frst_rgst_dt}, '')::timestamp, CURRENT_TIMESTAMP),
+            COALESCE(NULLIF(#{basic.frst_rgst_usid}, ''), #{required.portal_id}),
+            #{required.portal_id},
+            #{basic.exmn_nm},
+            'Y',
+            'N',
+            #{basic.pt_clsf},
+            #{required.portal_id},
+            #{basic.teth_stat},
+            #{basic.bpre_cd},
+            #{basic.ctdn_acpn_yn},
+            #{basic.etbd_stat},
+            #{basic.npo_en},
+            #{basic.main_hods},
+            #{basic.main_hods_cnts},
+            #{basic.alrg_en},
+            #{basic.idct_1},
+            #{basic.idct_2},
+            #{basic.mdcn_tkng},
+            #{basic.mdcn_tkng_optn_1},
+            #{basic.mdcn_tkng_cnts},
+            #{basic.atsm_cd},
+            #{basic.past_sdef},
+            #{basic.loca_orcv_anst_use_yn},
+            #{basic.atcl_tkng_stop_yn},
+            CAST(#{basic.atcl_tkng_stop_nody} AS numeric),
+            #{basic.ends_clsf_cd},
+            #{basic.slpn_ends_yn},
+            #{basic.slpn_drvt_mdcn_cd},
+            CAST(#{basic.slpn_drvt_mdcn_dosg} AS numeric),
+            #{basic.slpn_drvt_mdcn_cnts},
+            CAST(#{basic.exmn_o2sa_mnvl} AS numeric),
+            CAST(#{basic.exmn_o2sa_mxvl} AS numeric),
+            CAST(#{basic.rcvr_o2sa_mnvl} AS numeric),
+            CAST(#{basic.rcvr_o2sa_mxvl} AS numeric),
+            CAST(#{basic.oxyg_supl} AS numeric),
+            CAST(#{basic.exmn_bf_sytc_bp} AS numeric),
+            CAST(#{basic.exmn_bf_datc_bp} AS numeric),
+            CAST(#{basic.exmn_bf_plst} AS numeric),
+            CAST(#{basic.exmn_bf_rspr_cnt} AS numeric),
+            CAST(#{basic.exmn_af_sytc_bp} AS numeric),
+            CAST(#{basic.exmn_af_datc_bp} AS numeric),
+            CAST(#{basic.exmn_af_plst} AS numeric),
+            CAST(#{basic.exmn_af_rspr_cnt} AS numeric),
+            #{basic.sedt_evlt_cd},
+            #{basic.sedt_evlt_cnts},
+            #{basic.sedt_rctn_cd},
+            #{basic.pt_symp_cd},
+            #{basic.pt_symp_cnts},
+            #{basic.slpn_evlt_cd},
+            #{basic.slpn_evlt_cnts},
+            #{basic.chot_bass_cd},
+            #{basic.ref_matr},
+            #{basic.hstr_stat_cd},
+            #{basic.dgsg_no},
+            #{basic.pt_clsf_nm},
+            #{basic.teth_stat_nm},
+            #{basic.bpre_cd_nm},
+            #{basic.etbd_stat_nm},
+            #{basic.npo_en_nm},
+            #{basic.main_hods_nm},
+            #{basic.alrg_en_nm},
+            #{basic.idct_nm_1},
+            #{basic.idct_nm_2},
+            #{basic.mdcn_tkng_nm},
+            #{basic.mdcn_tkng_optn_nm_1},
+            #{basic.atsm_cd_nm},
+            #{basic.past_sdef_nm},
+            #{basic.ends_clsf_cd_nm},
+            #{basic.slpn_drvt_mdcn_cd_nm},
+            #{basic.sedt_evlt_cd_nm},
+            #{basic.sedt_rctn_cd_nm},
+            #{basic.pt_symp_cd_nm},
+            #{basic.slpn_evlt_cd_nm},
+            #{basic.chot_bass_cd_nm}
+    )
+    </insert>
+
+    <!--    내시경 검사결과기록 insert -->
+    <insert id="insertRecordInfo" useGeneratedKeys="true" keyProperty="record.ends_rslt_rcrd_sqno" keyColumn="ends_rslt_rcrd_sqno">
+        INSERT INTO mseexmrcn
+        (
+            pid,
+            ends_rcrd_sqno,
+            frst_rgst_dt,
+            frst_rgst_usid,
+            last_updt_usid,
+            last_yn,
+            del_yn,
+            exmn_nm,
+            exmn_date,
+            dtrm_date,
+            ends_dr_nm,
+            gscn_pt_yn,
+            stmc_bctr_exmn_rslt,
+            clo_cd,
+            trtm_mdtr_cd,
+            trtm_mdtr_cnts,
+            exsn_prcd_actg_mthd,
+            cmpc_yn,
+            cmpc_cnts,
+            cmpc_trtm_mthd,
+            cmpc_prgr,
+            cncr_mdex_advc_matr,
+            advc_matr,
+            advc_matr_cnts,
+            etnl_obsr_opnn,
+            dre_opnn,
+            obsr_inrt_time_ms,
+            obsr_exmn_end_time_ms,
+            obsr_recl_time_ms,
+            bpre_dgre_LC,
+            bpre_dgre_TC,
+            bpre_dgre_RC,
+            rslt_opnn_1,
+            rslt_opnn_2,
+            rslt_opnn_3,
+            plyp_exsn_prcd_actg_yn,
+            hstr_stat_cd,
+            stmc_bctr_exmn_rslt_nm,
+            clo_cd_nm,
+            trtm_mdtr_cd_nm,
+            exsn_prcd_actg_mthd_nm,
+            cmpc_cnts_nm,
+            cmpc_trtm_mthd_nm,
+            cmpc_prgr_nm,
+            advc_matr_nm,
+            etnl_obsr_opnn_nm,
+            dre_opnn_nm,
+            bpre_dgre_lc_nm,
+            bpre_dgre_tc_nm,
+            bpre_dgre_rc_nm,
+            rslt_opnn_nm_1,
+            rslt_opnn_nm_2,
+            rslt_opnn_nm_3,
+            dgsg_no
+        )
+        VALUES (
+            #{record.pid},
+            #{record.ends_rcrd_sqno},
+            COALESCE(NULLIF(#{record.frst_rgst_dt}, '')::timestamp, CURRENT_TIMESTAMP),
+            COALESCE(NULLIF(#{record.frst_rgst_usid}, ''), #{required.portal_id}),
+            #{required.portal_id},
+            'Y',
+            'N',
+            #{record.exmn_nm},
+            #{record.exmn_date}::date,
+            #{record.dtrm_date}::date,
+            #{record.ends_dr_nm},
+            #{record.gscn_pt_yn},
+            #{record.stmc_bctr_exmn_rslt},
+            #{record.clo_cd},
+            #{record.trtm_mdtr_cd},
+            #{record.trtm_mdtr_cnts},
+            #{record.exsn_prcd_actg_mthd},
+            #{record.cmpc_yn},
+            #{record.cmpc_cnts},
+            #{record.cmpc_trtm_mthd},
+            #{record.cmpc_prgr},
+            #{record.cncr_mdex_advc_matr},
+            #{record.advc_matr},
+            #{record.advc_matr_cnts},
+            #{record.etnl_obsr_opnn},
+            #{record.dre_opnn},
+            CAST(#{record.obsr_inrt_time_ms} AS numeric),
+            CAST(#{record.obsr_exmn_end_time_ms} AS numeric),
+            CAST(#{record.obsr_recl_time_ms} AS numeric),
+            #{record.bpre_dgre_LC},
+            #{record.bpre_dgre_TC},
+            #{record.bpre_dgre_RC},
+            #{record.rslt_opnn_1},
+            #{record.rslt_opnn_2},
+            #{record.rslt_opnn_3},
+            #{record.plyp_exsn_prcd_actg_yn},
+            #{record.hstr_stat_cd},
+            #{record.stmc_bctr_exmn_rslt_nm},
+            #{record.clo_cd_nm},
+            #{record.trtm_mdtr_cd_nm},
+            #{record.exsn_prcd_actg_mthd_nm},
+            #{record.cmpc_cnts_nm},
+            #{record.cmpc_trtm_mthd_nm},
+            #{record.cmpc_prgr_nm},
+            #{record.advc_matr_nm},
+            #{record.etnl_obsr_opnn_nm},
+            #{record.dre_opnn_nm},
+            #{record.bpre_dgre_lc_nm},
+            #{record.bpre_dgre_tc_nm},
+            #{record.bpre_dgre_rc_nm},
+            #{record.rslt_opnn_nm_1},
+            #{record.rslt_opnn_nm_2},
+            #{record.rslt_opnn_nm_3},
+            #{record.dgsg_no}
+        )
+    </insert>
+
+<!--   내시경 검사결과관찰소견 히스토리 -->
+    <insert id="insertObsrOpnnHistory" parameterType="java.util.HashMap">
+        INSERT INTO mseexmoph
+        (
+            pid,
+            ends_rslt_rcrd_sqno,
+            ends_obsr_opnn_sqno,
+            frst_rgst_usid,
+            last_updt_usid,
+            del_yn,
+            obsr_opnn_site_1,
+            obsr_opnn_site_2,
+            obsr_opnn_cnts,
+            obsr_opnn,
+            tisu_exmn_yn,
+            tisu_exmn_noit,
+            tisu_exmn_rslt_1,
+            tisu_exmn_rslt_2
+        )
+            SELECT
+            pid,
+            ends_rslt_rcrd_sqno,
+            ends_obsr_opnn_sqno,
+            #{portal_id},
+            #{portal_id},
+            del_yn,
+            obsr_opnn_site_1,
+            obsr_opnn_site_2,
+            obsr_opnn_cnts,
+            obsr_opnn,
+            tisu_exmn_yn,
+            tisu_exmn_noit,
+            tisu_exmn_rslt_1,
+            tisu_exmn_rslt_2
+        FROM mseexmopn
+        WHERE pid = #{pid}
+            AND ends_rcrd_sqno = #{ends_rcrd_sqno}
+            AND ends_obsr_opnn_sqno = #{ends_obsr_opnn_sqno}
+    </insert>
+
+<!--  내시경 검사결과관찰소견  -->
+    <insert id="insertObsrOpnn" parameterType="java.util.HashMap">
+        INSERT INTO mseexmopn
+        (
+            pid,
+            ends_rslt_rcrd_sqno,
+            frst_rgst_usid,
+            last_updt_usid,
+            del_yn,
+            obsr_opnn_site_1,
+            obsr_opnn_site_2,
+            obsr_opnn_cnts,
+            obsr_opnn,
+            tisu_exmn_yn,
+            tisu_exmn_noit,
+            tisu_exmn_rslt_1,
+            tisu_exmn_rslt_2,
+            obsr_opnn_site_nm_1,
+            obsr_opnn_site_nm_2,
+            obsr_opnn_nm,
+            tisu_exmn_rslt_nm_1,
+            tisu_exmn_rslt_nm_2,
+            dgsg_no
+        )
+        VALUES (
+            #{required.pid},
+            #{opinion.ends_rslt_rcrd_sqno},
+            #{required.portal_id},
+            #{required.portal_id},
+            'N',
+            #{opinion.obsr_opnn_site_1},
+            #{opinion.obsr_opnn_site_2},
+            #{opinion.obsr_opnn_cnts},
+            #{opinion.obsr_opnn},
+            #{opinion.tisu_exmn_yn},
+            #{opinion.tisu_exmn_noit},
+            #{opinion.tisu_exmn_rslt_1},
+            #{opinion.tisu_exmn_rslt_2},
+            #{opinion.obsr_opnn_site_nm_1},
+            #{opinion.obsr_opnn_site_nm_2},
+            #{opinion.obsr_opnn_nm},
+            #{opinion.tisu_exmn_rslt_nm_1},
+            #{opinion.tisu_exmn_rslt_nm_2},
+            #{opinion.dgsg_no}
+            )
+    </insert>
+
+<!--     판독취소 시 초기화-->
+    <!--    기초정보-->
+    <insert id="initialBasicInfo">
+        INSERT INTO msefndifn
+        (
+            pid
+            , ends_rcrd_sqno
+            , frst_rgst_dt
+            , frst_rgst_usid
+            , last_updt_dt
+            , last_updt_usid
+            , hstr_stat_cd
+            , del_yn
+            , dgsg_no
+        )
+        VALUES
+        (
+            #{pid}
+            , #{basic_ends_rcrd_sqno}
+            , COALESCE(NULLIF(#{basic_frst_rgst_dt}, '')::timestamp, CURRENT_TIMESTAMP)
+            , COALESCE(NULLIF(#{basic_frst_rgst_usid}, ''), #{portal_id})
+            , CURRENT_TIMESTAMP
+            , #{portal_id}
+            , '3'
+            , 'Y'
+            , #{dgsg_no}
+        )
+    </insert>
+
+    <insert id="initialRecordInfo">
+        INSERT INTO mseexmrcn
+        (
+            pid
+            , ends_rcrd_sqno
+            , frst_rgst_dt
+            , frst_rgst_usid
+            , last_updt_dt
+            , last_updt_usid
+            , hstr_stat_cd
+            , del_yn
+            , dgsg_no
+        )
+        VALUES
+        (
+            #{pid}
+            , #{record_ends_rcrd_sqno}
+            , COALESCE(NULLIF(#{record_frst_rgst_dt}, '')::timestamp, CURRENT_TIMESTAMP)
+            , COALESCE(NULLIF(#{record_frst_rgst_usid}, ''), #{portal_id})
+            , CURRENT_TIMESTAMP
+            , #{portal_id}
+            , '3'
+            , 'Y'
+            , #{dgsg_no}
+        )
+    </insert>
+</mapper>

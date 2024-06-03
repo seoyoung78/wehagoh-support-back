@@ -1,0 +1,670 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.MSC_090000.mapper.MSC_090100Mapper">
+    <!-- 트리 데이터(slip 데이터) -->
+    <select id="selectTreeList" resultType="com.duzon.lulu.service.MSC.MSC_090000.model.Tree">
+        SELECT slip_cd AS code -- 선택된 노드의 코드(=slip 코드)
+            , slip_nm AS text -- 선택된 노드의 명칭(=slip 명칭)
+            , slip_uprn_clsf_cd AS parent_code -- 부모 노드 코드
+            , prsc_clsf_cd               -- 처방분류코드(CR1001)
+            , (SELECT cmcd_nm FROM mono.icmcomcld WHERE cmcd_clsf_cd = 'CR1001' AND cmcd_cd = prsc_clsf_cd) AS prsc_clsf_nm  -- 처방분류명칭
+            , 'N' AS exmn_rslt_yn             -- 검사결과만 사용하는 코드여부
+            , lwrn_yn         -- 하위 폴더 존재여부(=최하위 폴더인지 판단하는 컬럼)
+            , exmn_rslt_tycd           -- 검사결과유형코드(W: 숫자,문자 T: TEXT)
+        FROM mono.medslipim
+        WHERE (prsc_clsf_cd in ('C1', 'C2', 'C3') OR slip_cd ILIKE 'PT%')
+          AND scrn_mark_yn = 'Y'
+        ORDER BY slip_dspl_seq, prsc_clsf_cd
+    </select>
+
+    <!--    검체종류/검체용량 조회    -->
+    <select id="selectCommonData" resultType="com.duzon.lulu.service.MSC.MSC_090000.model.CommonData">
+        SELECT mscspccdm.spcm_cd      AS value
+            , CONCAT(mscspccdm.spcm_cd, ' (', mscspccdm.spcm_labl_nm, ' / ', mscctncdm.ctnr_labl_nm, ')') AS text
+            , mscctncdm.ctnr_labl_nm AS ctnr_nm
+        FROM mscspccdm, mscctncdm
+        WHERE mscspccdm.ctnr_cd = mscctncdm.ctnr_cd
+        ORDER BY mscspccdm.spcm_cd
+    </select>
+
+    <!-- 처방 검색 : 조회조건이 신규 경우 처방 조회(exmn_rslt_yn가 'Y' 데이터만) -->
+    <select id="selectPrscList" resultType="com.duzon.lulu.service.MSC.MSC_090000.model.Prescription">
+        SELECT prsc_cd, prsc_nm, exmn_rslt_yn
+        , EXISTS(SELECT 1 FROM mscbndexn WHERE prsc_cd = medprscdm.prsc_cd AND use_yn = 'Y') AS set_yn
+        FROM medprscdm
+        WHERE slip_cd = #{slip_cd}
+          AND prsc_clsf_cd in ('C1', 'C2', 'C3', 'F1')
+        <choose>
+            <when test='search_type != null and search_type.equals("1")'>
+                AND CAST(#{date} AS DATE) BETWEEN apdy AND endy
+                AND prsc_psbl_yn = 'Y'
+            </when>
+            <otherwise>
+                AND exmn_rslt_yn = 'Y'
+                AND EXISTS(SELECT del_yn FROM mslexmcdm WHERE exmn_cd = prsc_cd AND del_yn = 'N')
+            </otherwise>
+        </choose>
+        ORDER BY prsc_nm
+    </select>
+
+    <select id="selectSearchList" resultType="com.duzon.lulu.service.MSC.MSC_090000.model.Tree" fetchSize="1000">
+        SELECT medprscdm.prsc_cd AS code
+            , medprscdm.prsc_nm AS text
+            , medprscdm.slip_cd AS parent_code
+            , CONCAT(medslipim.slip_nm, ' > ', medprscdm.prsc_cd, '. ', medprscdm.prsc_nm) AS search_path_text
+            , medslipim.lwrn_yn
+            , medprscdm.exmn_rslt_tycd
+        FROM medprscdm, mono.medslipim
+        WHERE medprscdm.prsc_clsf_cd IN ('C1', 'C2', 'C3', 'F1')
+          AND (medprscdm.prsc_cd ILIKE CONCAT('%', #{keyword}, '%')
+             OR medprscdm.prsc_nm ILIKE CONCAT('%', #{keyword}, '%')
+             OR medslipim.slip_nm ILIKE CONCAT('%', #{keyword}, '%'))
+          AND medslipim.slip_cd = medprscdm.slip_cd
+          AND medslipim.slip_uprn_clsf_cd != '*'
+          AND medslipim.scrn_mark_yn = 'Y'
+        <choose>
+            <when test='search_type != null and search_type.equals("1")'>
+                AND #{date}::date BETWEEN medprscdm.apdy AND medprscdm.endy
+                AND prsc_psbl_yn = 'Y'
+            </when>
+            <otherwise>
+                AND exmn_rslt_yn = 'Y'
+                AND EXISTS(SELECT del_yn FROM mslexmcdm WHERE exmn_cd = prsc_cd AND del_yn = 'N')
+            </otherwise>
+        </choose>
+        ORDER BY medslipim.slip_nm, code, text
+    </select>
+
+    <select id="selectForm" resultType="com.duzon.lulu.service.MSC.MSC_090000.model.Form">
+        SELECT medprscdm.prsc_cd -- 처방코드
+            , medprscdm.prsc_nm -- 처방명
+            , icmsugmnm.suga_hnm -- 한글명
+            , icmsugmnm.insn_edi_cd -- EDI코드
+            , medprscdm.prsc_clsf_cd -- 처방분류_코드
+            , COALESCE((SELECT cmcd_nm FROM mono.icmcomcld WHERE cmcd_clsf_cd = 'CR1001' AND cmcd_cd = medprscdm.prsc_clsf_cd), '') AS prsc_clsf_nm -- 처방분류_명칭
+            , icmsugmnm.suga_clsf_no -- 한글분류
+            , medprscdm.endy -- 종료일
+            , medprscdm.apdy
+            , CASE
+                WHEN icmsugmnm.grp_sngl_dvcd IS NULL
+                OR icmsugmnm.grp_sngl_dvcd = ''
+                        THEN 'S'
+                ELSE icmsugmnm.grp_sngl_dvcd
+                END AS grp_sngl_dvcd -- S/G
+            , icmsugmnm.suga_enm -- 영문명
+
+            -- 검사 기본 설정
+            , medprscdm.slip_cd -- slip 코드
+            , COALESCE((SELECT slip_nm FROM mono.medslipim WHERE slip_cd = medprscdm.slip_cd ), '') AS slip_nm -- 검사구분
+            , CASE
+                WHEN EXISTS(SELECT fclt_info_sqno FROM cfgexmrmn WHERE fclt_info_sqno = medprscdm.exrm_dept_sqno AND del_yn = 'N')
+                    THEN medprscdm.exrm_dept_sqno
+                ELSE NULL END AS exrm_dept_sqno -- 검사실부서일련번호
+            , medprscdm.prsc_nots -- 메모
+
+            -- 내시경검사 설정
+            , medprscdm.mdtr_site_cd -- 치료부위코드
+
+            -- 영상검사 설정
+            , medprscdm.mdlt_dvcd -- Modality_코드
+            , COALESCE((SELECT cmcd_nm FROM mono.icmcomcld WHERE cmcd_clsf_cd = 'CB2002' AND cmcd_cd = icmsugmnm.phtg_site_dvcd), '-') AS phtg_site_dvnm -- 촬영부위_명칭
+            , COALESCE((SELECT cmcd_nm FROM mono.icmcomcld WHERE cmcd_clsf_cd = 'CB2007' AND cmcd_cd = icmsugmnm.onsd_btsd_dvcd), '-') AS onsd_btsd_dvnm -- 편측양측_명칭
+            , medprscdm.cnmd_use_yn -- 조영제사용유무
+
+            -- 진단검사 설정
+            , COALESCE(mslexmcdm.spcm_cd_1, medprscdm.spcm_cd_1, '') AS spcm_cd_1 -- 검체종류_코드
+            , mslexmcdm.spcm_need_vol_1    -- 검체용량
+            , mslexmcdm.spcm_dosg_unit_1   -- 검체용량단위
+            , mslexmcdm.fix_vol_dvsn -- 정량표시(데이터소스 프론트에서 처리)
+            , mslexmcdm.exmn_need_time -- 검사소요시간_코드
+            , mslexmcdm.exmn_rslt_tycd -- 결과유형_코드(데이터소스 프론트에서 처리)
+<!--            , mslexmcdm.exmn_rslt_uncd &#45;&#45; 단위_코드-->
+            , (SELECT exmn_rslt_uncd FROM mscexmutn WHERE exmn_cd = medprscdm.prsc_cd AND use_yn = 'Y' AND NOW()::date BETWEEN strt_date AND end_date LIMIT 1) AS exmn_rslt_uncd
+            , mslexmcdm.dcpr_nodg -- 유효숫자_코드
+            , mslexmcdm.uprn_slip_clsf_cd
+            , CASE
+                WHEN COALESCE(icmsugmnm.ents_exmn_inst_cd, '') != ''
+                    THEN 'Y'
+                ELSE 'N'
+            END AS entd_exmn_yn -- 위탁여부
+            , COALESCE((SELECT ents_exmn_inst_nm
+                FROM icmeninsm
+                WHERE ents_exmn_inst_cd = icmsugmnm.ents_exmn_inst_cd
+                  AND #{date}::date BETWEEN ents_inst_apdy AND ents_inst_endy), '') AS ents_exmn_inst_nm -- 위탁기관 또는 수탁기관 명칭
+
+            -- 기능검사 설정
+            , medprscdm.wrcn_need_yn -- 동의서필요여부
+            , medprscdm.wrcn_cd -- 동의서코드
+
+            -- 물리치료 설정
+            , medprscdm.exmn_rslt_rptg_yn -- 검사결과보고여부
+
+            , CASE
+                WHEN COALESCE(medprscdm.exmn_rslt_yn, '') = '' THEN 'N'
+                ELSE 'Y'
+            END AS exmn_rslt_yn -- 검사 결과 사용여부
+            , medprscdm.prsc_psbl_yn -- 처방가능여부
+        FROM medprscdm
+            -- 수가마스터
+            LEFT OUTER JOIN icmsugmnm
+                ON icmsugmnm.suga_cd = medprscdm.prsc_cd
+                AND #{date}::date BETWEEN icmsugmnm.suga_apdy AND icmsugmnm.suga_endy
+            LEFT OUTER JOIN mslexmcdm
+                ON exmn_cd = medprscdm.prsc_cd
+                AND del_yn = 'N'
+        WHERE medprscdm.prsc_cd = #{prsc_cd}
+    </select>
+
+    <!-- 검사 참고치 조회 -->
+    <select id="selectRefCvrList" resultType="com.duzon.lulu.service.MSC.MSC_090000.model.RefCvr">
+        SELECT exmn_cd AS prsc_cd
+            , inpt_sqno
+            , rfvl_dvsn_cd
+            , sex_dvsn_cd
+            , rfvl_age_clsf_cd
+            , lwlm_rang_age
+            , age_lwlm_rang_type_cd
+            , uplm_rang_age
+            , age_uplm_rang_type_cd
+            , rfvl_lwlm_valu
+            , rfvl_lwlm_rang_type_cd
+            , rfvl_uplm_valu
+            , rfvl_uplm_rang_type_cd
+            , rfvl_rmrk
+            , strt_date
+            , end_date
+            , strt_date AS origin_strt_date
+        FROM mscexmrfn
+        WHERE exmn_cd = #{prsc_cd}
+          AND rfvl_dvsn_cd = #{type}
+          AND use_yn = 'Y'
+        ORDER BY strt_date DESC
+    </select>
+    
+    <select id="selectUnitList" resultType="com.duzon.lulu.service.MSC.MSC_090000.model.Unit">
+        SELECT exmn_cd AS prsc_cd
+            , unit_sqno
+            , exmn_rslt_uncd
+            , unit_rmrk
+            , strt_date
+            , end_date
+            , strt_date AS origin_strt_date
+        FROM mscexmutn
+        WHERE exmn_cd = #{prsc_cd}
+          AND use_yn = 'Y'
+        ORDER BY strt_date DESC
+    </select>
+
+    <select id="selectSetList" resultType="com.duzon.lulu.service.MSC.MSC_090000.model.Group">
+        SELECT exmn_cd                     -- 검사코드
+            , (SELECT prsc_nm FROM medprscdm WHERE prsc_cd = mscbndexn.exmn_cd) AS exmn_nm          -- 검사명
+            , use_yn                      -- 사용여부
+            , sort_seq                    -- 정렬(순번)
+            , prsc_cd                     -- 처방코드
+            , exmn_set_sqno               -- 검사코드Seq
+        FROM mscbndexn
+        WHERE prsc_cd = #{prsc_cd}
+        ORDER BY use_yn DESC, sort_seq
+    </select>
+
+    <select id="selectExmnList" resultType="com.duzon.lulu.service.MSC.MSC_090000.model.Group">
+        SELECT prsc_cd as exmn_cd
+            , prsc_nm as exmn_nm
+            , null    as exmn_set_sqno
+            , ''      as use_yn
+        FROM medprscdm
+        WHERE prsc_clsf_cd = 'C1'
+          AND (prsc_psbl_yn = 'Y'
+            OR (prsc_psbl_yn = 'N'
+            AND exmn_rslt_yn = 'Y'
+            AND EXISTS(SELECT del_yn FROM mslexmcdm WHERE exmn_cd = prsc_cd AND del_yn = 'N')
+        ))
+          AND (prsc_cd ILIKE CONCAT('%', #{keyword}, '%')
+           OR prsc_nm ILIKE CONCAT('%', #{keyword}, '%'))
+        ORDER BY prsc_cd
+    </select>
+
+    <insert id="saveForm" parameterType="com.duzon.lulu.service.MSC.MSC_090000.model.Form">
+        INSERT INTO medprscdm
+            ( frst_rgst_usid    -- 최초등록사용자ID
+            , last_updt_usid    -- 최종수정자ID
+            , exmn_rslt_yn      -- 검사결과만 사용하는 코드여부
+            , prsc_psbl_yn      -- 처방가능여부
+            , prsc_cd           -- 처방코드
+            , prsc_nm           -- 처방명
+            , slip_cd           -- slip코드
+            , prsc_clsf_cd      -- 처방분류코드
+            , exrm_dept_sqno    -- 검사실
+            , prsc_nots         -- 메모
+
+            , exmn_rslt_tycd    -- 결과유형
+<!--            , exmn_rslt_uncd    &#45;&#45; 단위-->
+            , spcm_cd_1         -- 검체종류
+            , spcm_need_vol_1   -- 검체용량
+            , fix_vol_dvsn      -- 정량표시
+            , spcm_dosg_unit_1  -- 검체용량단위
+            , dcpr_nodg         -- 소수부자리수(유효숫자)
+
+            , mdtr_site_cd      -- 치료부위코드
+
+            , mdlt_dvcd         -- Modality
+            , cnmd_use_yn       -- 조영제사용유무
+
+            , wrcn_need_yn      -- 동의서필요여부
+            , wrcn_cd           -- 동의서코드
+
+            , exmn_rslt_rptg_yn -- 검사결과보고여부
+        )
+        VALUES
+        (
+            #{portal_id}
+            , #{portal_id}
+            , 'Y'
+            , 'N'
+            , #{prsc_cd}
+            , #{prsc_nm}
+            , #{slip_cd}
+            , #{prsc_clsf_cd}
+            , #{exrm_dept_sqno}::int8
+            , #{prsc_nots}
+
+            , #{exmn_rslt_tycd}
+<!--            , #{exmn_rslt_uncd}-->
+            , #{spcm_cd_1}
+            , #{spcm_need_vol_1}
+            , #{fix_vol_dvsn}
+            , #{spcm_dosg_unit_1}
+            , #{dcpr_nodg}
+
+            , #{mdtr_site_cd}
+
+            , #{mdlt_dvcd}
+            , #{cnmd_use_yn}
+
+            , #{wrcn_need_yn}
+            , #{wrcn_cd}
+
+            , #{exmn_rslt_rptg_yn}
+        )
+        ON CONFLICT (prsc_cd) DO UPDATE SET
+             last_updt_usid = #{portal_id}
+            , last_updt_dt = now()
+
+            , exrm_dept_sqno = #{exrm_dept_sqno}::int8          -- 검사실
+            , prsc_nots = #{prsc_nots}                          -- 메모
+
+            , exmn_rslt_tycd = #{exmn_rslt_tycd}                -- 결과유형
+<!--            , exmn_rslt_uncd = #{exmn_rslt_uncd}                &#45;&#45; 단위-->
+            , spcm_cd_1 = #{spcm_cd_1}                          -- 검체종류
+            , spcm_need_vol_1 = #{spcm_need_vol_1}              -- 검체용량
+            , spcm_dosg_unit_1 = #{spcm_dosg_unit_1}            -- 검체용량단위
+            , fix_vol_dvsn = #{fix_vol_dvsn}                    -- 정량표시
+            , exmn_need_time  = #{exmn_need_time}               -- 검사소요시간
+            , dcpr_nodg       = #{dcpr_nodg}                    -- 유효숫자
+
+            , mdtr_site_cd = #{mdtr_site_cd}                    -- 치료부위코드
+
+            , mdlt_dvcd = #{mdlt_dvcd}                          -- Modality
+            , cnmd_use_yn = #{cnmd_use_yn}                      -- 조영제사용유무
+
+            , wrcn_need_yn = #{wrcn_need_yn}                    -- 동의서필요여부
+            , wrcn_cd = #{wrcn_cd}                              -- 동의서코드
+
+            , exmn_rslt_rptg_yn = #{exmn_rslt_rptg_yn}          -- 검사결과여부
+            , prsc_nm = #{prsc_nm}
+            , slip_cd = #{slip_cd}
+    </insert>
+
+    <insert id="saveC1Form" parameterType="com.duzon.lulu.service.MSC.MSC_090000.model.Form">
+        INSERT INTO mslexmcdm
+        (
+            exmn_cd
+            , frst_rgst_usid
+            , last_updt_usid
+            , del_yn
+            , exmn_nm
+            , prsc_psbl_yn
+            , spcm_cd_1
+            , spcm_need_vol_1
+            , exmn_rslt_tycd
+            , exmn_need_time
+            , dcpr_nodg
+<!--            , exmn_rslt_uncd-->
+            , fix_vol_dvsn
+            , spcm_dosg_unit_1
+            , uprn_slip_clsf_cd
+            , slip_cd
+        )
+        VALUES (
+            #{prsc_cd}
+            , #{portal_id}
+            , #{portal_id}
+            , 'N'
+            , #{prsc_nm}
+            , #{prsc_psbl_yn}
+            , #{spcm_cd_1}
+            , #{spcm_need_vol_1}
+            , #{exmn_rslt_tycd}
+            , #{exmn_need_time}
+            , #{dcpr_nodg}
+<!--            , #{exmn_rslt_uncd}-->
+            , #{fix_vol_dvsn}
+            , #{spcm_dosg_unit_1}
+            , #{uprn_slip_clsf_cd}
+            , #{slip_cd}
+        )
+        ON CONFLICT (exmn_cd) DO UPDATE SET
+            last_updt_usid = #{portal_id}
+            , last_updt_dt = now()
+            , del_yn = #{del_yn}
+            , prsc_psbl_yn = #{prsc_psbl_yn}
+            , spcm_cd_1 = #{spcm_cd_1}
+            , spcm_need_vol_1 = #{spcm_need_vol_1}
+            , exmn_rslt_tycd = #{exmn_rslt_tycd}
+            , exmn_need_time = #{exmn_need_time}
+            , dcpr_nodg = #{dcpr_nodg}
+<!--            , exmn_rslt_uncd = #{exmn_rslt_uncd}-->
+            , fix_vol_dvsn = #{fix_vol_dvsn}
+            , spcm_dosg_unit_1 = #{spcm_dosg_unit_1}
+            , uprn_slip_clsf_cd = #{uprn_slip_clsf_cd}
+            , slip_cd = #{slip_cd}
+            , exmn_nm = #{prsc_nm}
+    </insert>
+
+    <insert id="insertC1FormHistory">
+        INSERT INTO mslexmcdh
+        (
+            exmn_cd
+            , frst_rgst_usid
+            , last_updt_usid
+            , del_yn
+            , exmn_nm
+            , exmn_abnm
+            , brcd_exmn_nm
+            , prsc_psbl_yn
+            , spcm_cd_1
+            , brcd_nosh
+            , spcm_need_vol_1
+            , exmn_rslt_tycd
+            , exmn_need_time
+            , dcpr_nodg
+<!--            , exmn_rslt_uncd-->
+            , fix_vol_dvsn
+            , spcm_dosg_unit_1
+            , mddl_rslt_rtrv_yn
+            , rslt_rtrv_yn
+            , uprn_slip_clsf_cd
+            , slip_cd
+            , sort_sqno
+            , snsp_yn
+        )
+        SELECT
+            exmn_cd
+            , frst_rgst_usid
+            , last_updt_usid
+            , del_yn
+            , exmn_nm
+            , exmn_abnm
+            , brcd_exmn_nm
+            , prsc_psbl_yn
+            , spcm_cd_1
+            , brcd_nosh
+            , spcm_need_vol_1
+            , exmn_rslt_tycd
+            , exmn_need_time
+            , dcpr_nodg
+<!--            , exmn_rslt_uncd-->
+            , fix_vol_dvsn
+            , spcm_dosg_unit_1
+            , mddl_rslt_rtrv_yn
+            , rslt_rtrv_yn
+            , uprn_slip_clsf_cd
+            , slip_cd
+            , sort_sqno
+            , snsp_yn
+        FROM mslexmcdm
+        WHERE exmn_cd = #{prsc_cd}
+    </insert>
+
+    <insert id="saveSet" parameterType="com.duzon.lulu.service.MSC.MSC_090000.model.Group">
+        INSERT INTO mscbndexn
+        (
+            prsc_cd,
+            exmn_set_sqno,
+            frst_rgst_usid,
+            last_updt_usid,
+            exmn_cd,
+            sort_seq,
+            use_yn
+        )
+        SELECT
+            #{prsc_cd},
+            COALESCE(#{exmn_set_sqno}, MAX(exmn_set_sqno) + 1, 1),
+            #{portal_id},
+            #{portal_id},
+            #{exmn_cd},
+            #{sort_seq},
+            #{use_yn}
+        FROM mscbndexn
+        WHERE prsc_cd = #{prsc_cd}
+        ON CONFLICT (prsc_cd, exmn_set_sqno) DO UPDATE SET
+            sort_seq = #{sort_seq},
+            use_yn = #{use_yn},
+            last_updt_usid = #{portal_id},
+            last_updt_dt = now()
+    </insert>
+
+    <select id="selectExsistSet" resultType="boolean">
+        SELECT EXISTS(SELECT exmn_cd FROM mscbndexn WHERE exmn_cd = #{prsc_cd} AND use_yn = 'Y')
+    </select>
+
+    <!-- 검사 참고치 등록 -->
+    <insert id="saveSpcm" parameterType="com.duzon.lulu.service.MSC.MSC_090000.model.RefValue">
+        INSERT INTO mscexmrfn
+        (
+            exmn_cd        -- 검사코드(처방코드)
+            , spcm_cd        -- 검체코드(검체종류)
+            , rfvl_dvsn_cd         -- 구분(공통, 남자, 여자, 신생아)
+            , frst_rgst_usid -- 최초등록자
+            , last_updt_usid -- 최종수정자
+            , rfvl_lwlm_valu -- 참고치하한값
+            , rfvl_uplm_valu -- 참고지상한값
+            , use_yn         -- 사용여부
+        )
+        VALUES
+        (
+            #{prsc_cd}
+            , #{spcm_cd}
+            , #{vol_cd}
+            , #{portal_id}
+            , #{portal_id}
+            , #{rfvl_lwlm_valu}
+            , #{rfvl_uplm_valu}
+            , #{use_yn}
+        )
+        ON CONFLICT (exmn_cd, spcm_cd, rfvl_dvsn_cd) DO UPDATE SET
+            rfvl_lwlm_valu = #{rfvl_lwlm_valu} -- 참고치하한값
+            , rfvl_uplm_valu = #{rfvl_uplm_valu} -- 참고치상한값
+            , last_updt_usid = #{portal_id} -- 최종수정자
+            , last_updt_dt = now()           -- 최종수정일자
+            , use_yn    = #{use_yn}       -- 사용여부
+    </insert>
+
+    <insert id="saveRefCvr">
+        INSERT INTO mscexmrfn
+            (
+                exmn_cd
+                , strt_date
+                , inpt_sqno
+                , rfvl_dvsn_cd
+                , frst_rgst_usid
+                , last_updt_usid
+                , rfvl_lwlm_valu
+                , rfvl_uplm_valu
+                , end_date
+                , sex_dvsn_cd
+                , rfvl_age_clsf_cd
+                , lwlm_rang_age
+                , uplm_rang_age
+                , rfvl_lwlm_rang_type_cd
+                , rfvl_uplm_rang_type_cd
+                , age_lwlm_rang_type_cd
+                , age_uplm_rang_type_cd
+                , rfvl_rmrk
+            )
+        VALUES
+            (
+                #{prsc_cd}
+                , #{origin_strt_date}::date
+                , #{inpt_sqno}::int
+                , #{rfvl_dvsn_cd}
+                , #{portal_id}
+                , #{portal_id}
+                , #{rfvl_lwlm_valu}
+                , #{rfvl_uplm_valu}
+                , #{end_date}::date
+                , #{sex_dvsn_cd}
+                , #{rfvl_age_clsf_cd}
+                , #{lwlm_rang_age}::int
+                , #{uplm_rang_age}::int
+                , #{rfvl_lwlm_rang_type_cd}
+                , #{rfvl_uplm_rang_type_cd}
+                , #{age_lwlm_rang_type_cd}
+                , #{age_uplm_rang_type_cd}
+                , #{rfvl_rmrk}
+            )
+            ON CONFLICT (exmn_cd, strt_date, inpt_sqno, rfvl_dvsn_cd) DO UPDATE SET
+                strt_date = #{strt_date}::date
+                , last_updt_usid = #{portal_id}
+                , last_updt_dt = NOW()
+                , rfvl_lwlm_valu = #{rfvl_lwlm_valu}
+                , rfvl_uplm_valu = #{rfvl_uplm_valu}
+                , use_yn = 'Y'
+                , end_date = #{end_date}::date
+                , sex_dvsn_cd = #{sex_dvsn_cd}
+                , rfvl_age_clsf_cd = #{rfvl_age_clsf_cd}
+                , lwlm_rang_age = #{lwlm_rang_age}::int
+                , uplm_rang_age = #{uplm_rang_age}::int
+                , rfvl_lwlm_rang_type_cd = #{rfvl_lwlm_rang_type_cd}
+                , rfvl_uplm_rang_type_cd = #{rfvl_uplm_rang_type_cd}
+                , age_lwlm_rang_type_cd = #{age_lwlm_rang_type_cd}
+                , age_uplm_rang_type_cd = #{age_uplm_rang_type_cd}
+                , rfvl_rmrk = #{rfvl_rmrk}
+    </insert>
+
+    <!-- 검사 참고치/CVR 삭제 -->
+    <update id="deleteRefCvr">
+        UPDATE mscexmrfn
+        SET use_yn = 'N'
+            , last_updt_usid = #{portal_id} -- 최종수정자
+            , last_updt_dt = now()           -- 최종수정일자
+        WHERE exmn_cd = #{prsc_cd}
+    </update>
+    
+    <!--  검사 참고치 이력  -->
+    <insert id="insertRefCvrHistory">
+        INSERT INTO mscexmrfh
+        (
+            exmn_cd
+            , strt_date
+            , inpt_sqno
+            , rfvl_dvsn_cd
+            , frst_rgst_usid
+            , last_updt_usid
+            , rfvl_lwlm_valu
+            , rfvl_uplm_valu
+            , use_yn
+            , end_date
+            , sex_dvsn_cd
+            , rfvl_age_clsf_cd
+            , lwlm_rang_age
+            , uplm_rang_age
+            , rfvl_lwlm_rang_type_cd
+            , rfvl_uplm_rang_type_cd
+            , age_lwlm_rang_type_cd
+            , age_uplm_rang_type_cd
+            , rfvl_rmrk
+        )
+        SELECT
+            exmn_cd
+            , strt_date
+            , inpt_sqno
+            , rfvl_dvsn_cd
+            , frst_rgst_usid
+            , last_updt_usid
+            , rfvl_lwlm_valu
+            , rfvl_uplm_valu
+            , use_yn
+            , end_date
+            , sex_dvsn_cd
+            , rfvl_age_clsf_cd
+            , lwlm_rang_age
+            , uplm_rang_age
+            , rfvl_lwlm_rang_type_cd
+            , rfvl_uplm_rang_type_cd
+            , age_lwlm_rang_type_cd
+            , age_uplm_rang_type_cd
+            , rfvl_rmrk
+        FROM mscexmrfn
+        WHERE exmn_cd = #{prsc_cd}
+        <if test='del_yn == null'>
+            AND strt_date = #{strt_date}::date
+            AND inpt_sqno = #{inpt_sqno}::int
+            AND rfvl_dvsn_cd = #{rfvl_dvsn_cd}
+        </if>
+    </insert>
+
+    <!--  검사 단위 저장  -->
+    <insert id="saveUnit">
+        INSERT INTO mscexmutn
+            (exmn_cd , strt_date, unit_sqno, frst_rgst_usid, last_updt_usid, exmn_rslt_uncd, end_date, unit_rmrk)
+        VALUES
+            (#{prsc_cd}, #{origin_strt_date}::date,
+        <choose>
+            <when test='unit_sqno != null'>
+                #{unit_sqno}
+            </when>
+            <otherwise>
+                NEXTVAL('mscexmutn_unit_sqno_seq'::regclass)
+            </otherwise>
+        </choose>
+        , #{portal_id}, #{portal_id}, #{exmn_rslt_uncd}, #{end_date}::date, #{unit_rmrk})
+        ON CONFLICT (exmn_cd, strt_date, unit_sqno) DO UPDATE SET
+            strt_date = #{strt_date}::date
+            , last_updt_usid = #{portal_id}
+            , last_updt_dt = NOW()
+            , use_yn = 'Y'
+            , exmn_rslt_uncd = #{exmn_rslt_uncd}
+            , end_date = #{end_date}::date
+            , unit_rmrk = #{unit_rmrk}
+    </insert>
+
+    <!--  검사 단위 이력 저장  -->
+    <insert id="insertUnitHistory">
+        INSERT INTO mscexmuth
+            (exmn_cd, strt_date, unit_sqno, frst_rgst_usid, last_updt_usid, use_yn, exmn_rslt_uncd, end_date, unit_rmrk)
+        SELECT
+            exmn_cd, strt_date, unit_sqno, frst_rgst_usid, last_updt_usid, use_yn, exmn_rslt_uncd, end_date, unit_rmrk
+        FROM mscexmutn
+        WHERE exmn_cd = #{prsc_cd}
+        <if test='del_yn == null'>
+            AND strt_date = #{strt_date}::date
+        </if>
+    </insert>
+
+    <!--  검사 단위 삭제  -->
+    <update id="deleteUnit">
+        UPDATE mscexmutn
+        SET use_yn = 'N'
+            , last_updt_usid = #{portal_id} -- 최종수정자
+            , last_updt_dt = now()           -- 최종수정일자
+        WHERE exmn_cd = #{prsc_cd}
+    </update>
+
+    <select id="selectExsistPrsc" resultType="boolean">
+        SELECT EXISTS(SELECT prsc_cd FROM medprscdv WHERE prsc_cd = #{prsc_cd})
+            OR EXISTS(SELECT exmn_cd FROM mslexmcdm WHERE exmn_cd = #{prsc_cd} AND del_yn = 'N')
+    </select>
+
+</mapper>

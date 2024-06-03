@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.MSC_030000.mapper.MSC_030000Mapper">
+    <select id="selectResult" resultType="com.duzon.lulu.service.MSC.MSC_030000.model.ExamResult">
+        SELECT COALESCE(f.iptn_rslt, '') AS iptn_rslt
+            , f.iptn_dt
+            , coalesce((select x.user_nm from cfgwuserm x where x.usid = f.iptn_dr_usid limit 1), '') AS iptn_dr_nm
+            , coalesce((select x.sign_lctn from cfgwuserm x where x.usid =
+            (SELECT h.mdcr_dr_id FROM hoootrcin h WHERE h.rcpn_no = f.rcpn_no AND h.hstr_stat_cd = 'Y') limit 1), '') as mdcr_sign_lctn
+        FROM msfexmrsn f
+        WHERE f.pid = #{pid}
+            AND f.prsc_date = CAST(#{prsc_date} AS date)
+            AND f.prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+    </select>
+
+    <select id="selectFileList" resultType="com.duzon.lulu.service.MSC.MSC_030000.model.File">
+        SELECT file_path_id, file_extn_nm, file_srl_no
+        FROM msfexmfin
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+            AND del_yn = 'N'
+        ORDER BY file_srl_no
+    </select>
+
+    <!--    기능 검사 결과테이블 upsert-->
+    <insert id="upsertResult" parameterType="java.util.HashMap">
+        INSERT INTO msfexmrsn
+        (
+            pid -- 환자등록번호
+            , prsc_date -- 처방일자
+            , prsc_sqno -- 처방 일련번호
+            , frst_rgst_usid -- 최초 등록 사용자id
+            , last_updt_usid -- 최종 수정 사용자id
+            , del_yn -- 삭제 여부
+            , cndt_usid -- 실시 사용자id
+            , cndt_dt -- 실시 일시
+            , rcpn_no -- 접수 번호
+            , prsc_cd -- 처방 코드
+            , prsc_clsf_cd -- 처방 분류 코드
+            , slip_cd -- slip 코드
+        )
+        SELECT
+            pid
+            , prsc_date
+            , prsc_sqno
+            , #{portal_id}
+            , #{portal_id}
+            , 'N'
+            , cndt_prsn_id -- 검사처방 테이블의 실시자ID
+            , cndt_dt -- 검사처방 테이블의 실시일시
+            , rcpn_no -- 접수 번호
+            , prsc_cd -- 처방 코드
+            , prsc_clsf_cd -- 처방 분류 코드
+            , slip_cd -- slip 코드
+        FROM meddttpsn
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+        ON CONFLICT (pid, prsc_date, prsc_sqno) DO UPDATE -- 검사 -> 검사취소 -> 검사하는 경우
+            SET last_updt_usid = EXCLUDED.last_updt_usid
+            , last_updt_dt = CURRENT_TIMESTAMP
+            , del_yn = 'N'
+            , cndt_usid = EXCLUDED.cndt_usid -- 검사처방 테이블의 실시자ID
+            , cndt_dt = EXCLUDED.cndt_dt -- 검사처방 테이블의 실시일시
+            , rcpn_no = EXCLUDED.rcpn_no -- 접수 번호
+            , prsc_cd = EXCLUDED.prsc_cd -- 처방 코드
+            , prsc_clsf_cd = EXCLUDED.prsc_clsf_cd -- 처방 분류 코드
+            , slip_cd = EXCLUDED.slip_cd
+    </insert>
+
+    <!--    기능 검사 결과 이력 테이블 insert-->
+    <insert id="insertResultHistory" parameterType="java.util.HashMap">
+        INSERT INTO msfexmrsh
+        (
+            pid -- 환자등록번호
+            , prsc_date -- 처방일자
+            , prsc_sqno -- 처방 일련번호
+            , frst_rgst_usid -- 최초 등록 사용자id
+            , last_updt_usid -- 최종 수정 사용자id
+            , del_yn -- 삭제 여부
+            , cndt_usid -- 실시 사용자id
+            , cndt_dt -- 실시 일시
+            , iptn_dr_usid -- 판독 의사 사용자id
+            , iptn_dt -- 판독 일시
+            , rptg_usid -- 보고 사용자id
+            , rptg_dt -- 보고 일시
+            , iptn_rslt -- 판독 결과
+            , rcpn_no -- 접수 번호
+            , prsc_cd -- 처방 코드
+            , prsc_clsf_cd -- 처방 분류 코드
+            , slip_cd -- slip 코드
+            , dgsg_no
+            , hstr_stat_cd
+            , file_srl_no
+        )
+        SELECT
+            pid
+            , prsc_date
+            , prsc_sqno
+            , #{portal_id}
+            , #{portal_id}
+            , del_yn
+            , cndt_usid
+            , cndt_dt
+            , iptn_dr_usid
+            , iptn_dt
+            , rptg_usid
+            , rptg_dt
+            , iptn_rslt
+            , rcpn_no
+            , prsc_cd
+            , prsc_clsf_cd
+            , slip_cd
+            , dgsg_no
+            , #{hstr_stat_cd}
+            , file_srl_no
+        FROM msfexmrsn
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+    </insert>
+
+    <update id="updateResultDelYn">
+        UPDATE msfexmrsn
+        SET last_updt_usid = #{portal_id}
+            , last_updt_dt = CURRENT_TIMESTAMP
+            , del_yn = 'Y'
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+    </update>
+    <!--    기능 저정 수정 -->
+    <update id="updateSave">
+        <selectKey order="BEFORE" resultType="string" keyColumn="file_srl_no" keyProperty="file_srl_no">
+            SELECT STRING_AGG(file_srl_no::character varying, '|') as file_srl_no from msfexmfin
+            WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+            AND del_yn = 'N'
+        </selectKey>
+        UPDATE msfexmrsn
+        SET last_updt_dt = CURRENT_TIMESTAMP -- 최종 수정 일시
+            , last_updt_usid = #{portal_id} -- 최종 수정 사용자id
+            , iptn_rslt = #{iptn_rslt} -- 판독 결과
+            , iptn_dt = CURRENT_TIMESTAMP -- 판독 일시
+            , iptn_dr_usid = #{portal_id} -- 판독 의사 사용자id
+            , file_srl_no = #{file_srl_no} -- 파일 시리얼 번호
+            , dgsg_no = #{dgsg_no} -- 전자서명 번호
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+    <update id="saveCancel">
+        UPDATE msfexmrsn
+        SET last_updt_dt = CURRENT_TIMESTAMP -- 최종 수정 일시
+            , last_updt_usid = #{portal_id} -- 최종 수정 사용자id
+            , iptn_rslt = null -- 판독 결과
+            , iptn_dt = null -- 판독 일시
+            , iptn_dr_usid = null -- 판독 의사 사용자id
+            , file_srl_no = null -- 파일 시리얼 번호
+            , dgsg_no = #{dgsg_no} -- 전자서명 번호
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+    <update id="updateReport">
+        <selectKey order="BEFORE" resultType="string" keyColumn="file_srl_no" keyProperty="file_srl_no">
+            SELECT STRING_AGG(file_srl_no::character varying, '|') as file_srl_no from msfexmfin
+            WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+            AND del_yn = 'N'
+        </selectKey>
+        UPDATE msfexmrsn
+        SET last_updt_dt = CURRENT_TIMESTAMP -- 최종 수정 일시
+        , last_updt_usid = #{portal_id} -- 최종 수정 사용자id
+        , iptn_rslt = #{iptn_rslt} -- 판독 결과
+        , rptg_dt = CURRENT_TIMESTAMP -- 보고 일시
+        , rptg_usid = #{portal_id} -- 보고 사용자ID
+        , file_srl_no = #{file_srl_no} -- 파일 시리얼 번호
+        , dgsg_no = #{dgsg_no} -- 전자서명 번호
+        WHERE pid = #{pid}
+        AND prsc_date = CAST(#{prsc_date} AS date)
+        AND prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+    <update id="insertResult">
+        INSERT INTO mscemnrsn
+        (
+            frst_rgst_usid -- 최초 등록 사용자id
+            , last_updt_usid -- 최종 수정 사용자id
+            , pid -- 환자등록일시
+            , prsc_date -- 처방 일자
+            , prsc_sqno -- 처방 일련번호
+            , prsc_clsf_cd -- 처방 분류 코드
+            , slip_cd -- 슬립코드
+            , exmn_cd -- 검사 코드
+            , exmn_rslt_2 -- 검사 결과 2 (text)
+            , rslt_type_dvsn -- 결과 타입 구분: T
+            , prsc_prgr_stat_cd -- 처방 친행 상태 코드: N
+            , cndt_usid -- 실시 사용자id
+            , cndt_dt -- 실시 일시
+            , rptg_dt -- 보고 일시
+            , rcpn_no -- 접수 번호
+            , exmn_hope_date -- 검사 희망 일시
+        )
+        SELECT
+            #{portal_id} -- 최초 등록 사용자id
+            , #{portal_id} -- 최종 수정 사용자id
+            , pid -- 환자등록일시
+            , prsc_date -- 처방 일자
+            , prsc_sqno -- 처방 일련번호
+            , prsc_clsf_cd -- 처방 분류 코드
+            , slip_cd -- 슬립코드
+            , prsc_cd -- 검사 코드
+            , iptn_rslt -- 검사 결과 2 (text)
+            , 'T' -- 결과 타입 구분(W: 숫자,문자 T: TEXT)
+            , 'N' -- 진방 친행 상태 코드: 최종보고(N)
+            , cndt_usid -- 실시 사용자id
+            , cndt_dt -- 실시 일시
+            , rptg_dt -- 보고 일시
+            , rcpn_no -- 접수 번호
+            , (SELECT exmn_hope_date
+                FROM meddttpsn
+                WHERE pid = #{pid}
+                    AND prsc_date = CAST(#{prsc_date} AS date)
+                    AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+                ) -- 검사 희망 일시
+        FROM msfexmrsn
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+    <update id="updateReportCancel">
+        UPDATE msfexmrsn
+        SET last_updt_dt = CURRENT_TIMESTAMP -- 최종 수정 일시
+        , last_updt_usid = #{portal_id} -- 최종 수정 사용자id
+        , rptg_dt = null -- 보고 일시
+        , rptg_usid = null -- 보고 사용자id
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+    <insert id="insertFileItem">
+        INSERT INTO msfexmfin
+        (
+            pid
+            , prsc_date
+            , prsc_sqno
+            , frst_rgst_usid
+            , last_updt_usid
+            , del_yn
+            , file_path_id
+            , file_nm
+            , file_extn_nm
+            , dgsg_no
+        )
+        VALUES
+        (
+            #{required.pid}
+            , CAST(#{required.prsc_date} AS date)
+            , CAST(#{required.prsc_sqno} AS bigint)
+            , #{required.portal_id}
+            , #{required.portal_id}
+            , 'N'
+            , #{file.file_path_id}
+            , #{file.file_nm}
+            , #{file.file_extn_nm}
+            , #{file.dgsg_no}
+        )
+    </insert>
+
+    <update id="updateFileToDeleted">
+        UPDATE msfexmfin
+        SET del_yn = 'Y'
+        WHERE
+        <choose>
+            <when test="deleteList != null and deleteList.size() > 0">
+                file_path_id IN (<foreach collection="deleteList" item="item" separator=",">#{item}</foreach>)
+            </when>
+            <otherwise>
+                file_path_id = #{file_path_id}
+            </otherwise>
+        </choose>
+    </update>
+
+    <select id="selectHistory" resultType="com.duzon.lulu.service.MSC.MSC_030000.model.History">
+        SELECT last_updt_dt
+            , CONCAT(COALESCE((SELECT user_nm FROM cfgwuserm WHERE usid = a.last_updt_usid LIMIT 1), ''), '(', last_updt_usid, ')') AS last_updt_usid
+            , CASE
+                WHEN EXISTS(SELECT 1 FROM cmmdgsgnh WHERE dgsg_key = dgsg_no)
+                    THEN 'Y'
+                ELSE 'N'
+            END AS sign_yn
+            , hstr_stat_cd
+            , COALESCE(iptn_rslt, '') AS resultTxt
+<!--            ,  (-->
+<!--                SELECT ARRAY_TO_STRING(ARRAY_AGG(b.file_path_id), '|')-->
+<!--                FROM msfexmfin b-->
+<!--                WHERE b.file_srl_no = ANY (-->
+<!--                SELECT UNNEST(STRING_TO_ARRAY(a.file_srl_no, '|')::int[])-->
+<!--                )-->
+<!--                GROUP BY b.pid, b.prsc_date, b.prsc_sqno-->
+<!--            ) AS resultImg-->
+        FROM msfexmrsh a
+        WHERE hstr_stat_cd IS NOT NULL
+          AND pid = #{pid}
+          AND prsc_date = CAST(#{prsc_date} AS date)
+          AND prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+        ORDER BY hstr_sqno DESC
+    </select>
+</mapper>

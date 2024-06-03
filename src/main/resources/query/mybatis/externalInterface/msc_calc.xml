@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.ExternalInterface.Saerom.mapper.MSC_CalcMapper">
+	<select id="getExamCodeInfo" resultType="com.duzon.lulu.service.MSC.ExternalInterface.Saerom.model.CreatinineCodeInfo">
+		select
+			distinct msl.spcm_no as spcm_no,
+			msl.exmn_cd as exmn_cd,
+			msl.pid as pid,
+			patient.sex_cd as sex_cd,
+			TO_CHAR((CASE WHEN (COALESCE(patient.pt_srrn, '') = '' OR COALESCE(patient.pt_frrn, '') = '') THEN NULL
+                                  WHEN SUBSTRING(patient.pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', patient.pt_frrn)
+                                  WHEN SUBSTRING(patient.pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', patient.pt_frrn)
+                                  ELSE CONCAT('20', patient.pt_frrn)
+                END)::date,'yyyymmdd') as dobr,
+			mono.FN_GET_AGE(CASE WHEN (COALESCE(patient.pt_srrn, '') = '' OR COALESCE(patient.pt_frrn, '') = '') THEN NULL
+                                         WHEN SUBSTRING(patient.pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', patient.pt_frrn)
+                                         WHEN SUBSTRING(patient.pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', patient.pt_frrn)
+                                         ELSE CONCAT('20', patient.pt_frrn)
+                END, '2') as age_cd
+		from
+		mslexmrsn msl
+		,hooptbaim patient
+		where msl.pid = patient.pid
+		and msl.spcm_no = #{spcm_no}
+		and msl.exmn_cd = #{exmn_cd}
+	</select>
+</mapper>

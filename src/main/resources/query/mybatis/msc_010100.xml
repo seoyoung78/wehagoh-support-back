@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.MSC_010000.mapper.MSC_010100Mapper">
+    <select id="selectPatient" resultType="com.duzon.lulu.service.MSC.MSC_010000.model.MSC_010100ResModel">
+        select
+            dept.exrm_cd AS exrm_clsf_cd
+            , ptbaim.pid
+            , CONCAT(max(pt_nm), coalesce(nm_dscm_dvcd, '')) as pt_nm
+            , CONCAT(
+            (SELECT cmcd_smmr_nm FROM mono.icmcomcld  WHERE cmcd_clsf_cd = 'CZ1001' AND cmcd_cd = ptbaim.sex_cd)
+            , (CASE WHEN ptbaim.undn_yn = 'Y' AND ptbaim.sex_cd != 'O'
+                    THEN  '/미상'
+                WHEN ptbaim.undn_yn = 'N'
+                THEN CONCAT('/',
+                    mono.fn_get_age(case when coalesce(ptbaim.pt_srrn, '') = '' OR coalesce(ptbaim.pt_frrn, '') = '' then to_char(CURRENT_DATE, 'YYYYMMDD')
+                    when substring(ptbaim.pt_srrn, 1, 1) = '1'
+                        or  substring(ptbaim.pt_srrn, 1, 1) = '2'
+                        or  substring(ptbaim.pt_srrn, 1, 1) = '5'
+                        or  substring(ptbaim.pt_srrn, 1, 1) = '6' then concat('19', ptbaim.pt_frrn)
+                    when substring(ptbaim.pt_srrn, 1, 1) = '9'
+                        or  substring(ptbaim.pt_srrn, 1, 1) = '0' then concat('18',ptbaim. pt_frrn)
+                    else concat('20', ptbaim.pt_frrn)
+                    end, '5'))
+                ELSE ''
+            END)
+            ) AS age_cd
+            , min(rcpn_dt) AS rcpn_dt
+            , min(usemng.user_nm) as mdcr_dr_nm
+            , min(case
+                when exmprs.prsc_prgr_stat_cd = 'F' then 'E'        -- 진행중(프론트에서만 사용하는 상태) 위탁대기는 검사완료
+                when exmprs.prsc_prgr_stat_cd in ('G', 'H') then 'M'    	-- 위탁전송, 회신완료는 판독중
+                else exmprs.prsc_prgr_stat_cd
+            end) as prsc_prgr_stat_cd
+            , max(coalesce(emrg.emrg_pt_yn, 'N')) as emrg_stat
+            , min(coalesce(exmprs.mdtr_site_cd, '')) AS mdtr_site_cd
+            , min(exmprs.exmn_hope_date) AS exmn_hope_date
+            , min(exmprs.cndt_dt) AS cndt_dt
+            , MAX(emrg_pt_stup_dt) AS emrg_pt_stup_dt
+        from meddttpsn exmprs
+        inner join hooptbaim ptbaim on exmprs.pid = ptbaim.pid
+        inner join cfgwuserm usemng on exmprs.mdcr_dr_id = usemng.usid
+        inner join cfgexmrmn dept on exmprs.hope_exrm_dept_sqno = dept.fclt_info_sqno
+        left outer join medemgstn emrg on emrg.rcpn_no = exmprs.rcpn_no and emrg.emrg_pt_yn = 'Y'
+        where
+            exmprs.exmn_hope_date = #{param.prsc_date}
+            <if test="pid != null and !pid.equals('')">
+                and exmprs.pid = #{param.pid}
+            </if>
+            and coalesce(exmprs.dc_yn,'N') = 'N'
+            AND COALESCE(exmprs.mdcr_cncl_yn, 'N') = 'N'
+            AND COALESCE(mdtr_site_cd, '') NOT IN ('P', '99')
+        group by dept.exrm_cd, ptbaim.pid
+        order by emrg_stat DESC, emrg_pt_stup_dt, prsc_prgr_stat_cd, coalesce(to_char(min(rcpn_dt), 'HH24:MI'), '')
+    </select>
+</mapper>

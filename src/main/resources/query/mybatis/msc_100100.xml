@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.MSC_100000.mapper.MSC_100100Mapper">
+    <select id="getExmnDvcd" resultType="com.duzon.lulu.service.MSC.MSC_100000.model.MSC_100100ExmnDvcdModel">
+        select
+            null as parent
+            , cmcd_cd
+            , cmcd_nm
+            , cmcd_expl
+            , cmcd_sort_seq
+        from mono.icmcomcld
+        where cmcd_clsf_cd = 'CS2002'
+    union all -- 내시경 하위
+        select
+            'E' parent
+            , cmcd_cd
+            , cmcd_nm
+            , cmcd_expl
+            , cmcd_sort_seq
+        from mono.icmcomcld
+        where cmcd_clsf_cd = 'CR1004' and coalesce(cmcd_cd, '') in ('S', 'C')
+    order by cmcd_sort_seq;
+    </select>
+
+    <select id="getOpnnList" resultType="com.duzon.lulu.service.MSC.MSC_100000.model.MSC_100100OpnnModel">
+        select
+            exmn_opnn_sqno
+            , exmn_dvcd
+            , ends_exmn_dvcd
+            , exmn_opnn_titl
+            , exmn_opnn_cnts
+        from mscexmopm ex
+        where ex.del_yn = 'N'
+        order by exmn_opnn_sqno
+    </select>
+
+    <select id="searchOpnn" resultType="com.duzon.lulu.service.MSC.MSC_100000.model.MSC_100100OpnnModel">
+        select
+            ex.exmn_opnn_sqno
+            , ex.exmn_opnn_titl
+            , position(#{keyword} in ex.exmn_opnn_titl) pos
+            , length(ex.exmn_opnn_titl) len
+        from mscexmopm ex
+        where
+            ex.del_yn = 'N'
+            and ex.exmn_opnn_titl like concat('%', #{keyword}, '%')
+            <if test="opnnType != null">
+                and (ex.exmn_dvcd = #{opnnType} or ex.ends_exmn_dvcd = #{opnnType})
+            </if>
+        order by pos, len, exmn_opnn_titl, exmn_opnn_sqno
+    </select>
+
+    <select id="getOpnn" resultType="com.duzon.lulu.service.MSC.MSC_100000.model.MSC_100100OpnnModel">
+        select
+            exmn_opnn_sqno
+            , exmn_dvcd
+            , ends_exmn_dvcd
+            , exmn_opnn_titl
+            , exmn_opnn_cnts
+        from mscexmopm ex
+        where
+            ex.exmn_opnn_sqno = #{exmn_opnn_sqno}
+            and del_yn = 'N'
+    </select>
+
+    <select id="getEnds" resultType="com.duzon.lulu.service.MSC.MSC_100000.model.MSC_100100OpnnEndsModel">
+        select
+            ends.exmn_opnn_detl_sqno
+            , ends.obsr_opnn
+            , ends.obsr_opnn_cnts
+            , ends.obsr_opnn_site_1
+            , ends.obsr_opnn_site_2
+            , ends.advc_matr
+            , ends.advc_matr_cnts
+            , ends.etnl_obsr_opnn
+            , ends.dre_opnn
+            , ends.rslt_opnn_1
+            , ends.rslt_opnn_2
+            , ends.rslt_opnn_3
+            , ends.cncr_mdex_advc_matr
+            , exmn.exmn_opnn_sqno
+            , exmn.exmn_dvcd
+            , exmn.ends_exmn_dvcd
+            , exmn.exmn_opnn_titl
+            , exmn.exmn_opnn_cnts
+        from
+            mscexmopm exmn left outer join mscexmoed ends
+            on exmn.exmn_opnn_sqno = ends.exmn_opnn_sqno
+        where
+            exmn.exmn_opnn_sqno = #{exmn_opnn_sqno}
+            and exmn.del_yn = 'N'
+            and coalesce(ends.del_yn, 'N') = 'N'
+        order by ends.exmn_opnn_detl_sqno asc;
+    </select>
+
+    <insert id="saveExmnOpnn" useGeneratedKeys="true" keyProperty="exmn_opnn_sqno" keyColumn="exmn_opnn_sqno">
+        insert into mscexmopm (
+        frst_rgst_usid
+        , last_updt_usid
+        , del_yn
+        , exmn_dvcd
+        , ends_exmn_dvcd
+        , exmn_opnn_titl
+        , exmn_opnn_cnts
+        ) values (
+        #{portal_id}
+        , #{portal_id}
+        , 'N'
+        , #{exmn_dvcd}
+        , #{ends_exmn_dvcd}
+        , #{exmn_opnn_titl}
+        , #{exmn_opnn_cnts}
+        );
+    </insert>
+
+    <insert id="saveEndsOpnn">
+        insert into mscexmoed (
+        exmn_opnn_sqno
+        , frst_rgst_usid
+        , last_updt_usid
+        , del_yn
+        , obsr_opnn
+        , obsr_opnn_cnts
+        , obsr_opnn_site_1
+        , obsr_opnn_site_2
+        , advc_matr
+        , advc_matr_cnts
+        , etnl_obsr_opnn
+        , dre_opnn
+        , rslt_opnn_1
+        , rslt_opnn_2
+        , rslt_opnn_3
+        , cncr_mdex_advc_matr
+        ) values
+        <foreach collection="ends_detl_list" item="item" separator=",">
+            (#{exmn_opnn_sqno}
+            , #{portal_id}
+            , #{portal_id}
+            , 'N'
+            , #{item.obsr_opnn}
+            , #{item.obsr_opnn_cnts}
+            , #{item.obsr_opnn_site_1}
+            , #{item.obsr_opnn_site_2}
+            , #{item.advc_matr}
+            , #{item.advc_matr_cnts}
+            , #{item.etnl_obsr_opnn}
+            , #{item.dre_opnn}
+            , #{item.rslt_opnn_1}
+            , #{item.rslt_opnn_2}
+            , #{item.rslt_opnn_3}
+            , #{item.cncr_mdex_advc_matr})
+        </foreach>
+    </insert>
+
+    <update id="editExmnOpnn">
+        update mscexmopm
+        set
+            last_updt_usid = #{portal_id}
+            , last_updt_dt = current_timestamp
+            , exmn_dvcd = #{exmn_dvcd}
+            , exmn_opnn_titl = #{exmn_opnn_titl}
+            , exmn_opnn_cnts = #{exmn_opnn_cnts}
+        where
+            exmn_opnn_sqno = #{exmn_opnn_sqno}
+    </update>
+
+    <update id="editEndsOpnn">
+        <foreach collection="ends_detl_list" item="item" separator=";">
+            update mscexmoed
+            set
+            last_updt_usid = #{portal_id}
+            , last_updt_dt = current_timestamp
+            , del_yn = 'N'
+            , obsr_opnn = #{item.obsr_opnn}
+            , obsr_opnn_cnts = #{item.obsr_opnn_cnts}
+            , obsr_opnn_site_1 = #{item.obsr_opnn_site_1}
+            , obsr_opnn_site_2 = #{item.obsr_opnn_site_2}
+            , advc_matr = #{item.advc_matr}
+            , advc_matr_cnts = #{item.advc_matr_cnts}
+            , etnl_obsr_opnn = #{item.etnl_obsr_opnn}
+            , dre_opnn = #{item.dre_opnn}
+            , rslt_opnn_1 = #{item.rslt_opnn_1}
+            , rslt_opnn_2 = #{item.rslt_opnn_2}
+            , rslt_opnn_3 = #{item.rslt_opnn_3}
+            , cncr_mdex_advc_matr = #{item.cncr_mdex_advc_matr}
+            where
+            exmn_opnn_detl_sqno = #{item.exmn_opnn_detl_sqno}
+        </foreach>
+    </update>
+
+    <update id="deleteExmnOpnn">
+        update mscexmopm
+        set
+            last_updt_usid = #{portal_id}
+            , last_updt_dt = current_timestamp
+            , del_yn = 'Y'
+        where
+            exmn_opnn_sqno = #{exmn_opnn_sqno}
+    </update>
+
+    <update id="deleteEndsOpnn">
+        update mscexmoed
+        set
+            last_updt_usid = #{portal_id}
+            , last_updt_dt = current_timestamp
+            , del_yn = 'Y'
+        where
+            exmn_opnn_sqno = #{exmn_opnn_sqno}
+    </update>
+
+    <update id="deleteEndsOpnnByDetlSqno">
+        update mscexmoed
+        set
+            last_updt_usid = #{portal_id}
+            , last_updt_dt = current_timestamp
+            , del_yn = 'Y'
+        where
+            exmn_opnn_detl_sqno in (
+            <foreach collection="ends_detl_list" item="item" separator=",">
+                #{item.exmn_opnn_detl_sqno}
+            </foreach>
+        )
+    </update>
+</mapper>

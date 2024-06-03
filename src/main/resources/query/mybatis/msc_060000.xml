@@ -1,0 +1,654 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.MSC_060000.mapper.MSC_060000Mapper">
+    <!--  물리치료 공통 코드 조회 -->
+    <select id="selectComCodeList" resultType="com.duzon.lulu.service.MSC.MSC_060000.model.CommonCode">
+        SELECT cmcd_cd, cmcd_nm, cmcd_char_valu1
+        FROM mono.icmcomcld
+        WHERE current_date BETWEEN cmcd_apdy AND cmcd_endy
+            AND cmcd_clsf_cd = 'CS1015'
+        ORDER BY cmcd_sort_seq
+    </select>
+
+    <!--    물리치료 접수 목록 조회 -->
+    <select id="selectReceptionList" resultType="com.duzon.lulu.service.MSC.MSC_060000.model.Mdtr">
+        select t.pid
+            , t.mdtr_hope_date
+            , t.hope_exrm_cd
+<!--            , CASE WHEN LENGTH(t.prsc_prgr_stat_cd) = 1-->
+<!--                        THEN t.prsc_prgr_stat_cd-->
+<!--                    ELSE 'C'-->
+<!--                    END AS prsc_prgr_stat_cd-->
+        , t.prsc_prgr_stat_cd
+        , t.prsc_date
+                , CASE
+                    WHEN t.rcpn_hm IS NOT NULL THEN t.rcpn_hm
+                    ELSE t.exmn_hope_dt
+                END as rcpn_hm
+            , t.rcpn_dt
+            , coalesce((select x.user_nm from cfgwuserm x where x.usid = t.mdcr_dr_id limit 1), '') as mdcr_user_nm
+            , t.mdcr_dr_id
+            , t.pt_nm
+            , t.dobr
+            , t.age_cd
+            , t.rcpn_sqno
+            , t.mdcr_date
+            , t.dc_rqst_yn
+            , t.basc_addr
+            , t.mdtr_rslt_rptg_yn
+            , emg.emrg_pt_yn as emrg_stat
+        from ( select
+            a.pid
+            , a.mdtr_hope_date
+            , to_char(MIN(a.mdtr_hope_dt), '예약 HH24:MI') as exmn_hope_dt
+            , a.hope_trrm_dept_sqno as hope_exrm_cd
+            , a.prsc_date
+            , min(a.prsc_prgr_stat_cd) as prsc_prgr_stat_cd
+<!--            , (SELECT string_agg(sub.cmcd_cd, '|' ORDER BY sub.cmcd_sort_seq) AS no_dupe-->
+<!--                FROM  (-->
+<!--                SELECT DISTINCT ON (cmcd_cd)-->
+<!--                    cmcd_cd-->
+<!--                    , cmcd_sort_seq-->
+<!--                FROM medrhbpcn-->
+<!--                    LEFT OUTER JOIN mono.icmcomcld b ON b.cmcd_clsf_cd = 'CS1008' and b.cmcd_cd = prsc_prgr_stat_cd-->
+<!--                WHERE pid = a.pid-->
+<!--                    AND prsc_date = a.prsc_date-->
+<!--                    AND rcpn_no = a.rcpn_no-->
+<!--                    AND hope_trrm_dept_sqno = a.hope_trrm_dept_sqno-->
+<!--                ORDER  BY 1,2-->
+<!--            ) sub) as prsc_prgr_stat_cd-->
+            , min(a.rcpn_dt) as rcpn_dt
+            , to_char(min(a.rcpn_dt), 'HH24:MI') as rcpn_hm
+            , c.mdcr_dr_id
+            , p.dobr
+            , r.mdtr_rslt_rptg_yn
+            , (coalesce(p.basc_addr, '')) as basc_addr
+            , a.rcpn_no as rcpn_sqno
+            , c.mdcr_date
+            , concat(p.pt_nm, coalesce(p.nm_dscm_dvcd, '')) as pt_nm
+        , CONCAT(
+        (SELECT cmcd_smmr_nm FROM mono.icmcomcld WHERE cmcd_clsf_cd = 'CZ1001' AND cmcd_cd = p.sex_cd)
+        , (CASE WHEN p.undn_yn = 'Y' AND p.sex_cd != 'O'
+                THEN  '/미상'
+            WHEN p.undn_yn = 'N'
+                THEN CONCAT('/',
+                mono.fn_get_age(case when coalesce(p.pt_srrn, '') = '' OR coalesce(p.pt_frrn, '') = '' then to_char(CURRENT_DATE, 'YYYYMMDD')
+                when substring(p.pt_srrn, 1, 1) = '1'
+                    or  substring(p.pt_srrn, 1, 1) = '2'
+                    or  substring(p.pt_srrn, 1, 1) = '5'
+                    or  substring(p.pt_srrn, 1, 1) = '6' then concat('19', p.pt_frrn)
+                when substring(p.pt_srrn, 1, 1) = '9'
+                    or  substring(p.pt_srrn, 1, 1) = '0' then concat('18',p. pt_frrn)
+                else concat('20', p.pt_frrn)
+                end, '5'))
+            ELSE ''
+            END)
+        ) as age_cd,
+            MIN(coalesce(a.dc_rqst_yn, 'N')) as dc_rqst_yn
+        from medrhbpcn a LEFT JOIN mshresltn r
+            ON a.pid = r.pid AND a.prsc_date = r.prsc_date AND a.prsc_sqno = r.prsc_sqno
+            , hoootrcin c, hooptbaim p
+        where a.mdtr_hope_date = CAST(#{mdtr_hope_date} AS date)
+        <if test="pid != null and !pid.equals('')">
+            and a.pid = #{pid}
+        </if>
+        <if test='hope_trrm_dept_sqno != null and hope_trrm_dept_sqno.size() > 0'>
+            and a.hope_trrm_dept_sqno IN (<foreach collection="hope_trrm_dept_sqno" item="item" separator=",">CAST(#{item} AS bigint)</foreach>)
+        </if>
+            and a.prsc_clsf_cd = #{prsc_clsf_cd}
+            AND COALESCE(a.dc_yn, 'N') = 'N'
+            AND COALESCE(a.mdcr_cncl_yn, 'N') = 'N'
+            and a.pid = c.pid
+            and a.rcpn_no = c.rcpn_no
+            and c.hstr_stat_cd = 'Y'
+            and a.pid = p.pid
+        group by a.pid
+            , a.mdtr_hope_date
+            , a.hope_trrm_dept_sqno
+            , a.prsc_date
+            , c.mdcr_dr_id
+            , p.dobr
+            , c.mdcr_date
+            , p.pt_nm
+            , p.nm_dscm_dvcd
+            , p.sex_cd
+            , p.pt_srrn
+            , p.pt_frrn
+            , a.rcpn_no
+            , p.basc_addr
+            , r.mdtr_rslt_rptg_yn
+            , p.undn_yn
+        ) t
+        LEFT JOIN medemgstn emg ON emg.rcpn_no = t.rcpn_sqno AND emrg_pt_yn = 'Y'
+        order by emrg_stat, emrg_pt_stup_dt, t.prsc_prgr_stat_cd, t.rcpn_dt, t.pid, t.pt_nm
+    </select>
+
+    <!--    환자정보 조회     -->
+    <select id="selectPatientInfo" resultType="com.duzon.lulu.service.MSC.common.model.Common.PatientInfo">
+        select
+        hooptbaim.pid,
+        CONCAT(hooptbaim.pt_nm, coalesce(hooptbaim.nm_dscm_dvcd, '')) AS pt_nm,
+        hooptbaim.sex_cd,
+        (select cmcd_smmr_nm from mono.icmcomcld where cmcd_clsf_cd = 'CZ1001' and cmcd_cd = sex_cd) as sex_nm,
+        hooptbaim.undn_yn,
+        hooptbaim.dobr,
+        mono.fn_get_age(
+        case when coalesce(hooptbaim.pt_srrn, '') = '' OR coalesce(hooptbaim.pt_frrn, '') = '' then to_char(CURRENT_DATE, 'YYYYMMDD')
+            when substring(hooptbaim.pt_srrn, 1, 1) = '1'
+                or  substring(hooptbaim.pt_srrn, 1, 1) = '2'
+                or  substring(hooptbaim.pt_srrn, 1, 1) = '5'
+                or  substring(hooptbaim.pt_srrn, 1, 1) = '6' then concat('19', hooptbaim.pt_frrn)
+            when substring(hooptbaim.pt_srrn, 1, 1) = '9'
+                or  substring(hooptbaim.pt_srrn, 1, 1) = '0' then concat('18',hooptbaim. pt_frrn)
+            else concat('20', hooptbaim.pt_frrn)
+        end, '2')  As age,
+        mono.fn_get_age(case when coalesce(hooptbaim.pt_srrn, '') = '' OR coalesce(hooptbaim.pt_frrn, '') = '' then to_char(CURRENT_DATE, 'YYYYMMDD')
+        when substring(hooptbaim.pt_srrn, 1, 1) = '1'
+        or  substring(hooptbaim.pt_srrn, 1, 1) = '2'
+        or  substring(hooptbaim.pt_srrn, 1, 1) = '5'
+        or  substring(hooptbaim.pt_srrn, 1, 1) = '6' then concat('19', hooptbaim.pt_frrn)
+        when substring(hooptbaim.pt_srrn, 1, 1) = '9'
+        or  substring(hooptbaim.pt_srrn, 1, 1) = '0' then concat('18',hooptbaim. pt_frrn)
+        else concat('20', hooptbaim.pt_frrn)
+        end, '5') As ageWithUnit,
+        CONCAT(
+        (SELECT cmcd_smmr_nm FROM mono.icmcomcld WHERE cmcd_clsf_cd = 'CZ1001' AND cmcd_cd = hooptbaim.sex_cd)
+        , (CASE WHEN hooptbaim.undn_yn = 'Y' AND hooptbaim.sex_cd != 'O'
+                THEN  '/미상'
+            WHEN hooptbaim.undn_yn = 'N'
+                THEN CONCAT('/',
+                mono.fn_get_age(case when coalesce(hooptbaim.pt_srrn, '') = '' OR coalesce(hooptbaim.pt_frrn, '') = '' then to_char(CURRENT_DATE, 'YYYYMMDD')
+                when substring(hooptbaim.pt_srrn, 1, 1) = '1'
+                    or  substring(hooptbaim.pt_srrn, 1, 1) = '2'
+                    or  substring(hooptbaim.pt_srrn, 1, 1) = '5'
+                    or  substring(hooptbaim.pt_srrn, 1, 1) = '6' then concat('19', hooptbaim.pt_frrn)
+                when substring(hooptbaim.pt_srrn, 1, 1) = '9'
+                    or  substring(hooptbaim.pt_srrn, 1, 1) = '0' then concat('18',hooptbaim. pt_frrn)
+                else concat('20', hooptbaim.pt_frrn)
+                end, '5'))
+            ELSE ''
+            END)
+        ) as age_cd,
+        COALESCE(hooptbaim.pt_pctr_lctn, '') AS pt_pctr_lctn,
+        hoootrcin.mdcr_date,
+        COALESCE(hooptbaim.dsbl_yn, 'N') AS dsbl_yn,
+        COALESCE(hooptbaim.frnr_yn, 'N') AS frnr_yn,
+        COALESCE(hooptbaim.prgn_yn, 'N') AS prgn_yn,
+        COALESCE(hooptbaim.vip_pt_yn, 'N') AS vip_pt_yn,
+        COALESCE(hooptbaim.priv_pt_yn, 'N') AS priv_pt_yn,
+        (SELECT cmcd_nm FROM mono.icmcomcld WHERE cmcd_clsf_cd = 'CB4009' AND cmcd_cd = hoootrcin.cmhs_prps_cd) As cmhs_prps_nm,
+        (SELECT cmcd_nm FROM mono.icmcomcld WHERE cmcd_clsf_cd = 'CB4005' AND cmcd_cd = hoootrcin.insn_tycd) As insn_tycd,
+        CASE
+            WHEN LENGTH(hoootrcin.mdcr_dept_sqno::text) = 4
+                THEN (SELECT cmcd_nm FROM mono.icmcomcld WHERE cmcd_clsf_cd = 'CC1011' AND cmcd_cd = hoootrcin.mdcr_dept_sqno::text)
+            ELSE
+                (SELECT cmcd_nm FROM mono.icmcomcld WHERE cmcd_clsf_cd = 'CC1013' AND cmcd_cd = hoootrcin.mdcr_dept_sqno::text)
+        END AS dept_hnm,
+        (SELECT c.dgns_nm
+        FROM medptdgnn c
+        where c.rcpn_no = hoootrcin.rcpn_no
+        AND c.pid = hooptbaim.pid
+        AND c.dvsn = '1'
+        AND c.del_yn = 'N') AS dgns_nm,
+        COALESCE((SELECT d.memo_cnts FROM hooptmein d WHERE d.pid = hooptbaim.pid AND d.memo_dvcd = 'PAT'), '') AS memo_cnts,
+        COALESCE(e.user_nm, '') AS mdcr_dr_nm,
+        medrhbpcn.mdtr_hope_date as exmn_hope_date,
+        (
+        case min(medrhbpcn.rcpt_stat_cd)
+        when 'Y' then '완료'
+        else '미완료'
+        end
+        ) as rcpt_stat_nm
+        , hoootrcin.pt_dvcd
+        , hooptbaim.abo_type_cd
+        , CASE hooptbaim.rh_type_cd
+        WHEN 'Y' THEN '-'
+        WHEN 'N' THEN '+'
+        ELSE '' END AS rh_type_cd
+        , coalesce(e.sign_lctn, '') as mdcr_sign
+        , hooptbaim.bind_pid
+        , COALESCE(hooptbaim.use_yn, 'Y') AS use_yn
+        , (SELECT pt_nm FROM hooptbaim b WHERE b.pid = hooptbaim.bind_pid) AS bind_pt_nm
+        FROM hoootrcin
+        join hooptbaim on hoootrcin.pid = hooptbaim.pid
+        join medrhbpcn on medrhbpcn.rcpn_no = hoootrcin.rcpn_no
+        , cfgwuserm e
+        WHERE hoootrcin.rcpn_no = #{rcpn_sqno}::text
+<!--        AND hooptbaim.pid = #{pid}::text-->
+        AND hoootrcin.hstr_stat_cd = 'Y'
+        AND medrhbpcn.prsc_clsf_cd = #{prsc_clsf_cd}::text
+        AND medrhbpcn.hope_trrm_dept_sqno = #{hope_exrm_cd}::int8
+        AND COALESCE(medrhbpcn.dc_yn, 'N') = 'N'
+        AND COALESCE(medrhbpcn.mdcr_cncl_yn, 'N') = 'N'
+        AND medrhbpcn.mdtr_hope_date = #{exmn_hope_date}::date
+        AND e.usid = hoootrcin.mdcr_dr_id
+        group by hoootrcin.rcpn_no, hooptbaim.pid, hoootrcin.mdcr_date, hoootrcin.cmhs_prps_cd, hoootrcin.mdcr_dept_sqno, hoootrcin.mdcr_dr_id, medrhbpcn.mdtr_hope_date, hoootrcin.pt_dvcd, hoootrcin.insn_tycd, e.user_nm, e.usr_sqno
+    </select>
+
+    <!--  검사처방 목록  -->
+    <select id="selectPrscList" resultType="com.duzon.lulu.service.MSC.MSC_060000.model.Details">
+        SELECT medrhbpcn.prsc_cd,
+        medrhbpcn.prsc_nm,
+        (SELECT user_nm FROM cfgwuserm WHERE usid = medrhbpcn.prsc_dr_id limit 1) AS prsc_dr_nm,
+        medrhbpcn.prsc_dr_id,                   -- 처방의사ID
+<!--        CASE-->
+<!--        WHEN medrhbpcn.prsc_prgr_stat_cd = 'B' OR medrhbpcn.prsc_prgr_stat_cd = 'C' THEN medrhbpcn.prsc_prgr_stat_cd-->
+<!--        ELSE 'E'-->
+<!--        END AS prsc_prgr_stat_cd,              &#45;&#45; 상태코드-->
+        medrhbpcn.prsc_prgr_stat_cd,
+        medrhbpcn.prsc_memo,                    -- 처방메모
+        medrhbpcn.pid,                          -- 등록번호
+        medrhbpcn.prsc_date,                    -- 처방일자
+        medrhbpcn.prsc_sqno,
+        medrhbpcn.prsc_cndt_dept_sqno as hope_exrm_cd,
+        medrhbpcn.mdtr_hope_date,               -- 검사희망일
+        medrhbpcn.slip_cd,                      -- 슬립코드
+        medrhbpcn.rcpn_no as rcpn_sqno,                    -- 접수일련번호
+        medrhbpcn.rcps_id,                    -- 접수자 아이디
+        (SELECT user_nm FROM cfgwuserm WHERE usid = medrhbpcn.rcps_id limit 1) AS rcps_nm, -- 접수자 이름
+        (SELECT sign_lctn FROM cfgwuserm WHERE usid = medrhbpcn.rcps_id limit 1) AS rcps_sign, -- 접수자 서명
+        mshresltn.trtm_strt_dt, -- 처치 시작 일시
+        mshresltn.trtm_end_dt,  -- 처치 종료 일시
+        COALESCE(mshresltn.mdtr_opnn, '') as mdtr_opnn, -- 치료 소견
+        COALESCE(mshresltn.mdtr_memo, '') as mdtr_memo, -- 치료 메모
+        (SELECT exmn_rslt_rptg_yn FROM medprscdm WHERE medprscdm.prsc_cd = medrhbpcn.prsc_cd), -- [마스터] 검사 결과 보고 여부
+        mshresltn.mdtr_rslt_rptg_yn, -- [물리치료 결과] 치료 결과 보고 여부
+        (SELECT a.dept_sqno
+        FROM cfgemplem a
+        WHERE a.empl_sqno = medrhbpcn.prsc_dr_empl_sqno
+        AND a.main_dept_yn = 'Y'
+        AND a.empl_vald_yn = 'Y') as dr_dept_cd, -- 처방의 부서
+        (SELECT usr_sqno
+        FROM cfgwuserm
+        WHERE usid = (SELECT mdcr_dr_id FROM hoootrcin WHERE rcpn_no = #{rcpn_sqno} AND hstr_stat_cd = 'Y')
+        LIMIT 1) AS mdcr_dr_id,
+        (SELECT usr_sqno FROM cfgemplem WHERE empl_sqno = medrhbpcn.prsc_dr_empl_sqno limit 1) AS prsc_dr_sqno,
+        medrhbpcn.dc_rqst_yn
+        FROM medrhbpcn
+            LEFT OUTER JOIN mshresltn ON medrhbpcn.pid = mshresltn.pid
+                AND medrhbpcn.prsc_date = mshresltn.prsc_date
+                AND medrhbpcn.prsc_sqno = mshresltn.prsc_sqno
+                AND mshresltn.del_yn = 'N'
+        WHERE medrhbpcn.prsc_date = CAST(#{prsc_date} AS date)
+            AND medrhbpcn.rcpn_no = #{rcpn_sqno}
+            AND medrhbpcn.hope_trrm_dept_sqno = CAST(#{hope_exrm_cd} AS bigint)
+            AND medrhbpcn.prsc_clsf_cd = #{prsc_clsf_cd}
+            AND COALESCE(medrhbpcn.dc_yn, 'N') = 'N'
+            AND COALESCE(medrhbpcn.mdcr_cncl_yn, 'N') = 'N'
+            AND medrhbpcn.mdtr_hope_date = #{mdtr_hope_date}::date
+        ORDER BY medrhbpcn.prsc_prgr_stat_cd, mshresltn.trtm_strt_dt
+    </select>
+
+    <select id="selectStatCd" resultType="string">
+        SELECT prsc_prgr_stat_cd
+        FROM medrhbpcn
+        WHERE pid = #{pid}
+        AND prsc_date = CAST(#{prsc_date} AS date)
+        AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+    </select>
+
+    <!--  처방진행상태코드 수정  -->
+    <!--  처치시작  -->
+    <update id="updateTrtmStart">
+        UPDATE medrhbpcn
+        SET last_updt_usid = #{portal_id}
+            , last_updt_dt = CURRENT_TIMESTAMP
+            , prsc_prgr_stat_cd = 'C' -- 상태코드
+            , rcpn_dt = CURRENT_TIMESTAMP -- 접수일시
+            , rcps_id = #{portal_id} -- 접수자
+            , mdtr_hope_dt = null
+            , rcpn_prsn_empl_sqno = #{employee_no}
+            , dc_rqst_yn = 'N'
+        WHERE prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+            AND pid = #{pid}
+            AND coalesce(prsc_prgr_stat_cd, 'B') = 'B'
+    </update>
+
+    <!--  처치취소  -->
+    <update id="updateTrtmStartCancel">
+        UPDATE medrhbpcn
+        SET last_updt_usid = #{portal_id}
+            , last_updt_dt = CURRENT_TIMESTAMP
+            , prsc_prgr_stat_cd = 'B' -- 상태코드
+            , rcpn_dt = null
+            , rcps_id = null
+            , mdtr_hope_dt = null
+            , rcpn_prsn_empl_sqno = null
+            , dc_rqst_yn = 'N'
+        WHERE prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+            AND pid = #{pid}
+            AND prsc_prgr_stat_cd = 'C'
+    </update>
+
+    <!--  처치종료  -->
+    <update id="updateTrtmEnd">
+        UPDATE medrhbpcn
+        SET last_updt_usid = #{portal_id}
+            , last_updt_dt = CURRENT_TIMESTAMP
+            , prsc_prgr_stat_cd = 'E'
+            , cndt_dt = CURRENT_TIMESTAMP
+            , cndt_prsn_id = #{portal_id}
+            , cndt_prsn_empl_sqno = #{employee_no}
+        WHERE prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+            AND pid = #{pid}
+            AND prsc_prgr_stat_cd = 'C'
+    </update>
+
+    <!--  처치종료 취소  -->
+    <update id="updateTrtmEndCancel">
+        UPDATE medrhbpcn
+        SET last_updt_usid = #{portal_id}
+            , last_updt_dt = CURRENT_TIMESTAMP
+            , prsc_prgr_stat_cd = 'C'
+            , cndt_dt = null
+            , cndt_prsn_id = null
+            , cndt_prsn_empl_sqno = null
+        WHERE prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+            AND pid = #{pid}
+            AND prsc_prgr_stat_cd = 'E'
+    </update>
+
+    <!--  완료보고  -->
+    <update id="updateCompleteReport">
+        UPDATE medrhbpcn
+        SET last_updt_usid = #{portal_id}
+        , last_updt_dt = CURRENT_TIMESTAMP
+        , prsc_prgr_stat_cd = 'N'
+        WHERE prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+            AND pid = #{pid}
+            AND prsc_prgr_stat_cd = 'E'
+    </update>
+
+    <!--  완료보고 취소  -->
+    <update id="updateCompleteReportCancel">
+        UPDATE medrhbpcn
+        SET last_updt_usid = #{portal_id}
+        , last_updt_dt = CURRENT_TIMESTAMP
+        , prsc_prgr_stat_cd = 'E'
+        WHERE prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+            AND pid = #{pid}
+            AND prsc_prgr_stat_cd = 'N'
+    </update>
+
+    <!--  처치시작: 결과테이블 upsert -->
+    <insert id="upsertResultStart" parameterType="java.util.HashMap">
+        INSERT INTO mshresltn
+        (
+            pid
+            , prsc_date
+            , prsc_sqno
+            , frst_rgst_usid
+            , last_updt_usid
+            , del_yn
+            , trtm_strt_dt
+            , rcpn_no
+            , prsc_cd
+            , prsc_clsf_cd
+            , slip_cd
+        )
+        SELECT pid
+            , prsc_date
+            , prsc_sqno
+            , #{portal_id}
+            , #{portal_id}
+            , 'N'
+            , CURRENT_TIMESTAMP
+            , rcpn_no
+            , prsc_cd
+            , prsc_clsf_cd
+            , slip_cd
+        FROM medrhbpcn
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+        ON CONFLICT (pid, prsc_date, prsc_sqno) DO UPDATE
+        SET last_updt_usid = #{portal_id}
+            , last_updt_dt = CURRENT_TIMESTAMP
+            , del_yn = 'N'
+            , trtm_strt_dt = CURRENT_TIMESTAMP
+    </insert>
+
+    <!--    물리치료 결과이력 테이블 insert-->
+    <insert id="insertResultHistory" parameterType="java.util.HashMap">
+        <selectKey order="BEFORE" resultType="boolean" keyColumn="status" keyProperty="status">
+            SELECT EXISTS(
+                SELECT hstr_stat_cd
+                FROM mshreslth
+                WHERE pid = #{pid}
+                  AND prsc_date = CAST(#{prsc_date} AS date)
+                  AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+                  AND hstr_stat_cd IS NOT NULL
+                ORDER BY hstr_sqno DESC
+                LIMIT 1) AS status
+        </selectKey>
+            INSERT INTO mshreslth
+            (
+                pid
+                , prsc_date
+                , prsc_sqno
+                , frst_rgst_usid
+                , last_updt_usid
+                , del_yn
+                , trtm_strt_dt
+                , trtm_end_dt
+                , rptg_usid
+                , rptg_dt
+                , mdtr_opnn
+                , mdtr_memo
+                , rcpn_no
+                , prsc_cd
+                , prsc_clsf_cd
+                , slip_cd
+                , hstr_stat_cd
+                , dgsg_no
+            )
+            SELECT
+                pid
+                , prsc_date
+                , prsc_sqno
+                , #{portal_id}
+                , #{portal_id}
+                , del_yn
+                , trtm_strt_dt
+                , trtm_end_dt
+                , rptg_usid
+                , rptg_dt
+                , mdtr_opnn
+                , mdtr_memo
+                , rcpn_no
+                , prsc_cd
+                , prsc_clsf_cd
+                , slip_cd
+                , CASE WHEN #{status} IS NOT NULL AND #{status} = true THEN
+                    (SELECT CASE
+                                WHEN #{hstr_stat_cd} = '1' AND
+                                         hstr_stat_cd = '3' THEN '1'
+                                WHEN #{hstr_stat_cd} = '1' AND
+                                        hstr_stat_cd != '3' THEN '2'
+                                WHEN #{hstr_stat_cd} = '3' THEN '3'
+                                WHEN #{hstr_stat_cd} = '2' AND
+                                        hstr_stat_cd != '3' THEN '2'
+                                WHEN #{hstr_stat_cd} = '2' AND hstr_stat_cd = '3' THEN '1'
+                                ELSE NULL
+                            END
+                            FROM mshreslth
+                            WHERE pid = #{pid}
+                              AND prsc_date = CAST(#{prsc_date} AS date)
+                              AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+                              AND hstr_stat_cd IS NOT NULL
+                            ORDER BY hstr_sqno DESC
+                            LIMIT 1)
+                    WHEN #{status} IS NOT NULL AND #{status} = false AND #{hstr_stat_cd} = '1' THEN '1'
+                    ELSE null
+                END
+                , dgsg_no
+            FROM mshresltn
+            WHERE pid = #{pid}
+                AND prsc_date = CAST(#{prsc_date} AS date)
+                AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+    </insert>
+
+    <!--   결과테이블 업데이트   -->
+    <!--   처치취소   -->
+    <update id="updateResultStartCancel">
+        UPDATE mshresltn
+        SET last_updt_usid = #{portal_id}
+            , last_updt_dt = CURRENT_TIMESTAMP
+            , del_yn = 'Y'
+            , trtm_strt_dt = NULL
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+    <!--   처치종료   -->
+    <update id="updateResultEnd">
+        UPDATE mshresltn
+        SET last_updt_usid = #{portal_id}
+            , last_updt_dt = CURRENT_TIMESTAMP
+            , trtm_end_dt = CURRENT_TIMESTAMP
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+    <!--   처치종료 취소   -->
+    <update id="updateResultCancel">
+        UPDATE mshresltn
+        SET last_updt_usid = #{portal_id}
+            , last_updt_dt = CURRENT_TIMESTAMP
+            , trtm_end_dt = NULL
+            , mdtr_opnn = null
+            , mdtr_memo = null
+            , dgsg_no = #{dgsg_no}
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+    <!--   완료보고   -->
+    <update id="updateResultCompleteReport">
+        UPDATE mshresltn
+        <set>
+            last_updt_usid = #{portal_id}
+            , last_updt_dt = CURRENT_TIMESTAMP
+            , mdtr_opnn = #{mdtr_opnn}
+            , mdtr_memo = #{mdtr_memo}
+            , rptg_usid = #{portal_id}
+            , rptg_dt = CURRENT_TIMESTAMP
+            , mdtr_rslt_rptg_yn = #{exmn_rslt_rptg_yn}
+            <if test="dgsg_no != null and dgsg_no != ''">
+                , dgsg_no = #{dgsg_no}
+            </if>
+        </set>
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+    <!--   완료보고 취소   -->
+    <update id="updateResultCompleteReportCancel">
+        UPDATE mshresltn
+        SET last_updt_usid = #{portal_id}
+            , last_updt_dt = CURRENT_TIMESTAMP
+            , rptg_usid = NULL
+            , rptg_dt = NULL
+            , mdtr_rslt_rptg_yn = NULL
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+    <!--  치료 소견 / 치료 메모 -->
+    <update id="updateResultInput">
+    UPDATE mshresltn
+    SET last_updt_usid = #{portal_id}
+        , last_updt_dt = CURRENT_TIMESTAMP
+        , mdtr_opnn = #{mdtr_opnn}
+        , mdtr_memo = #{mdtr_memo}
+        , dgsg_no = #{dgsg_no}
+    WHERE pid = #{pid}
+        AND prsc_date = CAST(#{prsc_date} AS date)
+        AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+    <!--	검사 희망일 변경	-->
+    <update id="updateMdtrHopeDate">
+        UPDATE medrhbpcn
+        SET mdtr_hope_date = CAST(#{exmn_hope_date} AS date)
+        ,mdtr_hope_dt = #{exmn_hope_dt}::timestamp
+        ,last_updt_usid = #{portal_id}
+        ,last_updt_dt = CURRENT_TIMESTAMP
+        WHERE pid = #{pid}
+            AND prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+    </update>
+
+    <!--  DC 요청  -->
+    <update id="updateDcRqstY">
+        UPDATE medrhbpcn
+            SET dc_rqst_yn = 'Y'
+        WHERE  prsc_date = CAST(#{prsc_date} AS date)
+            AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+            AND pid = #{pid}
+    </update>
+
+    <!--   물리치료 결과 : 처치 일시 수정-->
+    <update id="updateTrtmDt">
+        UPDATE mshresltn
+        SET last_updt_usid = #{portal_id}
+        , last_updt_dt = CURRENT_TIMESTAMP
+        <if test="trtm_strt_dt != null and !trtm_strt_dt.equals('')">
+            , trtm_strt_dt = #{trtm_strt_dt}::timestamp
+        </if>
+        <if test="trtm_end_dt != null and !trtm_end_dt.equals('')">
+            , trtm_end_dt = #{trtm_end_dt}::timestamp
+        </if>
+        WHERE pid = #{pid}
+            AND prsc_date = #{prsc_date}::date
+            AND prsc_sqno = #{prsc_sqno}::bigint
+    </update>
+
+    <select id="selectRecord" resultType="com.duzon.lulu.service.MSC.MSC_060000.model.Record">
+        SELECT a.prsc_date, a.mdtr_hope_date, b.mdtr_opnn
+        FROM medrhbpcn a JOIN mshresltn b
+            ON a.pid = b.pid
+                AND a.prsc_date = b.prsc_date
+                AND a.prsc_sqno = b.prsc_sqno
+        WHERE a.pid = #{pid}
+            AND a.prsc_prgr_stat_cd IN ('E', 'N')
+            AND b.del_yn = 'N'
+            AND coalesce(a.dc_yn, 'N') = 'N'
+            AND coalesce(a.mdcr_cncl_yn, 'N') = 'N'
+        ORDER BY prsc_date DESC
+    </select>
+
+    <select id="selectHistory" resultType="com.duzon.lulu.service.MSC.MSC_060000.model.History">
+        SELECT  last_updt_dt
+            , CONCAT(COALESCE((SELECT user_nm FROM cfgwuserm WHERE usid = a.last_updt_usid LIMIT 1), ''), '(', last_updt_usid, ')') AS last_updt_usid
+            , CASE
+                WHEN EXISTS(SELECT 1 FROM cmmdgsgnh WHERE dgsg_key = dgsg_no)
+                    THEN 'Y'
+                ELSE 'N'
+            END AS sign_yn
+            , hstr_stat_cd
+            , CASE
+                WHEN hstr_stat_cd = '3' THEN ''
+        ELSE CONCAT(TO_CHAR(trtm_strt_dt, 'HH24:MI:SS'), ' ~ ', TO_CHAR(trtm_end_dt, 'HH24:MI:SS'), '
+', mdtr_opnn)
+        END AS resultTxt
+        FROM mshreslth a
+        WHERE hstr_stat_cd IS NOT NULL
+          AND pid = #{pid}
+          AND prsc_date = CAST(#{prsc_date} AS date)
+          AND prsc_sqno =  CAST(#{prsc_sqno} AS bigint)
+        ORDER BY hstr_sqno DESC
+    </select>
+</mapper>

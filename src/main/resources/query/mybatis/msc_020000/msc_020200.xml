@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper
+	namespace="com.duzon.lulu.service.MSC.MSC_020000.mapper.MSC_020200Mapper">
+	
+	<!-- 위탁기관목록 조회 -->
+	<select id="rtrvEntsInstList"
+		parameterType="map"
+		resultType="com.duzon.lulu.service.MSC.MSC_020000.model.EntsInstModel">
+		select 
+			ENINST.ents_exmn_inst_cd,
+			ENINST.ents_exmn_inst_nm
+		from icmeninsm ENINST
+		where spcm_exmn_yn = 'Y' and
+			current_date between ENINST.ents_inst_apdy and
+			ENINST.ents_inst_endy
+	</select>
+	
+	<select id="rtrvSclKey" resultType="String">
+		select 
+			irm_hspt_cd
+		from cmmpcsifm
+		where 
+			pacs_co_cd = 'SCL'
+			and use_yn = 'Y'
+			and current_date between itcn_apdy::date and itcn_endy::date
+	</select>
+	
+	
+	<sql id="fromMslentrfnMslexmrsn">
+		from mslexmrsn
+		join (
+			select 
+				distinct on (spcm_no, exmn_cd)
+				spcm_no,
+				exmn_cd,
+				spcm_ents_sqno,
+				spcm_ents_prgr_stat_cd,
+				ents_exmn_inst_cd,
+				spcm_ents_trms_dt,
+				spcm_ents_trms_usid,
+				spcm_ents_rply_dt,
+				spcm_ents_rply_usid,
+				spcm_ents_trms_cncl_dt,
+				spcm_ents_trms_cncl_usid
+			from mslentrfn
+			order by spcm_no desc, exmn_cd desc, spcm_ents_sqno desc, spcm_ents_prgr_stat_cd
+			) mslentrfn
+			on mslentrfn.spcm_no = mslexmrsn.spcm_no
+			and mslentrfn.exmn_cd = mslexmrsn.exmn_cd
+	</sql>
+
+	<!-- 위탁검사처방목록조회 -->
+	<select id="rtrvEntsExmnPrscList"
+		parameterType="map"
+		resultType="com.duzon.lulu.service.MSC.MSC_020000.model.EntsExmnPrscModel">
+		SELECT
+			mslexmrsn.spcm_no,
+			mslexmrsn.exmn_cd,
+			mslexmrsn.pid,
+			concat(PTBAIN.pt_nm, COALESCE(PTBAIN.nm_dscm_dvcd, '')) as pt_nm,
+			(select cmcd_smmr_nm from mono.icmcomcld  where cmcd_clsf_cd = 'CZ1001' and cmcd_cd = PTBAIN.sex_cd) as sex_labl,
+			mono.fn_get_age(CASE WHEN (COALESCE(PTBAIN.pt_srrn, '') = '' OR COALESCE(PTBAIN.pt_frrn, '') = '') THEN NULL
+                                         WHEN SUBSTRING(PTBAIN.pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', PTBAIN.pt_frrn)
+                                         WHEN SUBSTRING(PTBAIN.pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', PTBAIN.pt_frrn)
+                                         ELSE CONCAT('20', PTBAIN.pt_frrn)
+                END, '5') as age_labl,
+			mslexmrsn.exmn_date as cndt_dy,
+			cfgwuserm.user_nm as mdcr_user_nm,
+			medprscdm.prsc_nm,
+			mscspccdm.spcm_nm,
+			mslentrfn.ents_exmn_inst_cd,
+			mslentrfn.spcm_ents_trms_dt::date as trms_dy,
+			mslentrfn.spcm_ents_rply_dt::date as rply_dy,
+			mslentrfn.spcm_ents_prgr_stat_cd,
+			CONCAT(
+			(SELECT cmcd_smmr_nm FROM mono.icmcomcld  WHERE cmcd_clsf_cd = 'CZ1001' AND cmcd_cd = PTBAIN.sex_cd)
+			, (CASE WHEN PTBAIN.undn_yn = 'Y' AND PTBAIN.sex_cd != 'O'
+			THEN  '/미상'
+			WHEN PTBAIN.undn_yn = 'N'
+			THEN CONCAT('/',
+			mono.fn_get_age(case when coalesce(PTBAIN.pt_srrn, '') = '' OR coalesce(PTBAIN.pt_frrn, '') = '' then to_char(CURRENT_DATE, 'YYYYMMDD')
+				when substring(PTBAIN.pt_srrn, 1, 1) = '1'
+				or  substring(PTBAIN.pt_srrn, 1, 1) = '2'
+				or  substring(PTBAIN.pt_srrn, 1, 1) = '5'
+				or  substring(PTBAIN.pt_srrn, 1, 1) = '6' then concat('19', PTBAIN.pt_frrn)
+				when substring(PTBAIN.pt_srrn, 1, 1) = '9'
+				or  substring(PTBAIN.pt_srrn, 1, 1) = '0' then concat('18',PTBAIN. pt_frrn)
+				else concat('20', PTBAIN.pt_frrn)
+				end, '5'))
+				ELSE ''
+				END)
+				) as sex_age
+		<include refid="fromMslentrfnMslexmrsn"/>
+			join mslspcprn on mslspcprn.spcm_no = mslexmrsn.spcm_no
+			join hooptbaim PTBAIN on mslexmrsn.pid = PTBAIN.pid
+        	join medprscdm on medprscdm.prsc_cd = mslexmrsn.exmn_cd
+        	join mscspccdm on mscspccdm.spcm_cd = mslspcprn.spcm_cd
+        	join hoootrcin on hoootrcin.rcpn_no = mslexmrsn.rcpn_no and hstr_stat_cd = 'Y'
+        	join cfgwuserm on cfgwuserm.usid = hoootrcin.mdcr_dr_id
+		where
+			<choose>
+				<when test='search_dy_cd.equals("A")'>
+					mslexmrsn.exmn_date between #{from_dy}::date and #{to_dy}::date
+				</when>
+				<when test='search_dy_cd.equals("B")'>
+					mslentrfn.spcm_ents_trms_dt::date between #{from_dy}::date and #{to_dy}::date
+				</when>
+				<when test='search_dy_cd.equals("C")'>
+					mslentrfn.spcm_ents_rply_dt::date between #{from_dy}::date and #{to_dy}::date
+				</when>
+				<otherwise>
+					1 = 0
+				</otherwise>
+			</choose>
+			<if test="pid != null and !pid.equals('')">
+				and mslexmrsn.pid = #{pid}
+			</if>
+			<if test="ents_exmn_inst_cd != null and !ents_exmn_inst_cd.equals('')">
+				and mslentrfn.ents_exmn_inst_cd = #{ents_exmn_inst_cd}
+			</if>
+		order by
+			mslexmrsn.exmn_date,
+			mslentrfn.spcm_ents_trms_dt,
+			mslentrfn.spcm_ents_rply_dt,
+			mslexmrsn.frst_rgst_dt
+	</select>
+	
+	<!-- 위탁의뢰 쿼리 조회.
+	* 작성자 : 강현구
+	* 최종 수정일 : 2024-03-13 -->
+	<select id="createEntsApiParam" parameterType="com.duzon.lulu.service.MSC.MSC_020000.model.CreateEntsApiParamModel" resultType="com.duzon.lulu.service.MSC.MSC_020000.model.EntsApiParamModel">
+    SELECT mslexmrsn.spcm_no,
+           mslexmrsn.exmn_cd,
+           mslentrfn.ents_exmn_inst_cd,
+           mslexmrsn.pid,
+           concat(ptbain.pt_nm, COALESCE(ptbain.nm_dscm_dvcd, ''))        AS pt_nm,     -- 환자 이름.
+           ptbain.sex_cd                                                  AS sex,       -- 성별.
+           to_char(mslspcprn.blcl_dt, 'YYYYMMDD')                         AS blcl_dy,   -- 채혈일.
+           cfgwuserm.user_nm                                              AS dr_nm,     -- 진료의 명.
+           medprscdm.prsc_nm,
+           mscspccdm.spcm_nm,
+           mslspcprn.spcm_cd,
+           ptbain.pt_frrn,
+           substring(ptbain.pt_srrn, 1, 1) || mono.Pgp_sym_decrypt(Substring(ptbain.pt_srrn, 2, Length(pt_srrn))::bytea, #{rrnKey}) AS pt_srrn,
+           mslentrfn.spcm_ents_prgr_stat_cd
+           <include refid="fromMslentrfnMslexmrsn"/>
+    JOIN   mslspcprn
+    ON     mslspcprn.spcm_no = mslexmrsn.spcm_no
+    JOIN   medprscdm
+    ON     medprscdm.prsc_cd = mslexmrsn.exmn_cd
+    JOIN   hooptbaim ptbain
+    ON     mslexmrsn.pid = ptbain.pid
+    JOIN   hoootrcin
+    ON     hoootrcin.rcpn_no = mslexmrsn.rcpn_no
+    AND    hstr_stat_cd = 'Y'
+    JOIN   cfgwuserm
+    ON     cfgwuserm.usid = hoootrcin.mdcr_dr_id
+    JOIN   mscspccdm
+    ON     mscspccdm.spcm_cd = mslspcprn.spcm_cd
+    WHERE  (
+              mslexmrsn.spcm_no, mslexmrsn.exmn_cd) IN 
+              <foreach collection="exmnRsltSet" item="exmnRslt" open="(" separator="," close=")">
+              (#{exmnRslt.spcm_no}::text, #{exmnRslt.exmn_cd}::text)
+              </foreach>
+    FOR UPDATE OF mslspcprn
+	</select>
+	
+    <insert id="trmsEnts" parameterType="com.duzon.lulu.service.MSC.util.MSLC.MSLCParamModel">
+    INSERT INTO mslentrfn (
+                spcm_no,
+                exmn_cd,
+                frst_rgst_usid,
+                last_updt_usid,
+                ents_exmn_inst_cd,
+                spcm_ents_prgr_stat_cd,
+                spcm_ents_trms_dt,
+                spcm_ents_trms_usid,
+                spcm_ents_rqst_sqno )
+    VALUES      <foreach collection="param[0]" item="item" separator=",">
+                ( #{item.spcm_no},
+                #{item.exmn_cd},
+                #{session.portal_id},
+                #{session.portal_id},
+                #{item.ents_exmn_inst_cd},
+                'G',
+                current_timestamp,
+                #{session.portal_id},
+                #{item.spcm_ents_rqst_sqno} )
+                </foreach>
+    </insert>
+    
+    <insert id="cnclTrmsEnts" parameterType="com.duzon.lulu.service.MSC.util.MSLC.MSLCParamModel">
+    INSERT INTO mslentrfn (
+                spcm_no,
+                exmn_cd,
+                frst_rgst_usid,
+                last_updt_usid,
+                ents_exmn_inst_cd,
+                spcm_ents_prgr_stat_cd,
+                spcm_ents_trms_cncl_dt,
+                spcm_ents_trms_cncl_usid,
+                spcm_ents_rqst_sqno )
+    VALUES      <foreach collection="param[0]" item="item" separator=",">
+                ( #{item.spcm_no},
+                #{item.exmn_cd},
+                #{session.portal_id},
+                #{session.portal_id},
+                #{item.ents_exmn_inst_cd},
+                'F',
+                current_timestamp,
+                #{session.portal_id},
+                #{item.spcm_ents_rqst_sqno} )
+                </foreach>
+    </insert>
+    
+    <!-- 검체처방내역 lock -->
+    <insert id="rplyEnts" parameterType="com.duzon.lulu.service.MSC.util.MSLC.MSLCParamModel">
+        insert into mslentrfn (
+        	spcm_no,
+        	exmn_cd,
+        	frst_rgst_usid,
+        	last_updt_usid,
+        	ents_exmn_inst_cd,
+        	spcm_ents_prgr_stat_cd,
+        	spcm_ents_trms_dt,
+        	spcm_ents_trms_usid,
+        	spcm_ents_rply_dt,
+        	spcm_ents_rply_usid,
+        	spcm_ents_rqst_sqno,
+        	spcm_ents_rply_nmvl,
+        	spcm_ents_rply_txt,
+        	spcm_ents_rply_rmrk,
+        	spcm_ents_rply_rfvl,
+        	spcm_ents_rply_uplm,
+        	spcm_ents_rply_lwlm,
+        	spcm_ents_rply_dtrm,
+        	spcm_ents_rply_unit
+        )
+        values
+            <foreach collection="param[0]" item="item" separator=","> 
+            (
+        	#{item.spcm_no},
+        	#{item.exmn_cd},
+        	#{session.portal_id},
+        	#{session.portal_id},
+        	#{item.ents_exmn_inst_cd},
+        	'H',
+        	#{item.spcm_ents_trms_dt}::timestamp,
+        	#{item.spcm_ents_trms_usid},
+        	current_timestamp,
+        	#{session.portal_id},
+        	#{item.spcm_ents_rqst_sqno}::int8,
+        	#{item.spcm_ents_rply_nmvl},
+        	#{item.spcm_ents_rply_txt},
+        	#{item.spcm_ents_rply_rmrk},
+        	#{item.spcm_ents_rply_rfvl},
+       		#{item.spcm_ents_rply_uplm},
+       		#{item.spcm_ents_rply_lwlm},
+       		#{item.spcm_ents_rply_dtrm},
+       		#{item.spcm_ents_rply_unit}
+            )
+        </foreach>
+    </insert>
+
+	<select id="logEntsReq" parameterType="com.duzon.lulu.service.MSC.MSC_020000.model.EntsReqModel" resultType="Long">
+	 	insert into mslentrqn (
+	 		frst_rgst_usid,
+	 		last_updt_usid,
+	 		spcm_ents_rqst_usid,
+	 		spcm_ents_rqst_dvcd,
+	 		spcm_ents_rqst_cnts,
+	 		spcm_ents_rsps_cnts,
+	 		spcm_ents_rqst_sucs_yn,
+	 		ents_exmn_inst_cd	
+	 	) values (
+	 		#{portal_id},
+	 		#{portal_id},
+	 		#{portal_id},
+	 		#{spcm_ents_rqst_dvcd},
+	 		#{spcm_ents_rqst_cnts},
+	 		#{spcm_ents_rsps_cnts},
+	 		#{spcm_ents_rqst_sucs_yn},
+	 		#{ents_exmn_inst_cd}
+	 	)
+	 	returning spcm_ents_rqst_sqno
+	</select>
+</mapper>

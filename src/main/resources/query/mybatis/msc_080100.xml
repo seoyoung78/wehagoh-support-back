@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.MSC_080000.mapper.MSC_080100Mapper">
+    <select id="getExmPatient" resultType="com.duzon.lulu.service.MSC.MSC_080000.model.MSC_080100ResModel">
+        select
+            exmprs.pid
+            , concat(ptbaim.pt_nm, coalesce(ptbaim.nm_dscm_dvcd, '')) as pt_nm
+            , CONCAT(
+            (SELECT cmcd_smmr_nm FROM mono.icmcomcld WHERE cmcd_clsf_cd = 'CZ1001' AND cmcd_cd = ptbaim.sex_cd)
+            , (CASE WHEN ptbaim.undn_yn = 'Y' AND ptbaim.sex_cd != 'O'
+                    THEN  '/미상'
+                WHEN ptbaim.undn_yn = 'N'
+                    THEN CONCAT('/',
+                    mono.fn_get_age(case when coalesce(ptbaim.pt_srrn, '') = '' OR coalesce(ptbaim.pt_frrn, '') = '' then to_char(CURRENT_DATE, 'YYYYMMDD')
+                    when substring(ptbaim.pt_srrn, 1, 1) = '1'
+                        or  substring(ptbaim.pt_srrn, 1, 1) = '2'
+                        or  substring(ptbaim.pt_srrn, 1, 1) = '5'
+                        or  substring(ptbaim.pt_srrn, 1, 1) = '6' then concat('19', ptbaim.pt_frrn)
+                    when substring(ptbaim.pt_srrn, 1, 1) = '9'
+                        or  substring(ptbaim.pt_srrn, 1, 1) = '0' then concat('18',ptbaim. pt_frrn)
+                    else concat('20', ptbaim.pt_frrn)
+                    end, '5'))
+                ELSE ''
+            END)
+            ) AS age_cd
+            , TO_CHAR((CASE WHEN (COALESCE(PTBAIM.pt_srrn, '') = '' OR COALESCE(PTBAIM.pt_frrn, '') = '') THEN NULL
+                                  WHEN SUBSTRING(PTBAIM.pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', PTBAIM.pt_frrn)
+                                  WHEN SUBSTRING(PTBAIM.pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', PTBAIM.pt_frrn)
+                                  ELSE CONCAT('20', PTBAIM.pt_frrn)
+                END)::date,'yyyymmdd') dobr
+            , dept.exrm_cd AS exrm_clsf_cd
+            , dept.exrm_detl_info  as hope_exrm_nm
+            , exmprs.prsc_cd
+            , exmprs.prsc_nm
+            , exmprs.mdcr_dr_id
+            , usemng.user_nm as mdcr_user_nm
+            , exmprs.prsc_prgr_stat_cd
+            , EXISTS (SELECT emrg_pt_yn FROM medemgstn WHERE rcpn_no = exmprs.rcpn_no AND emrg_pt_yn = 'Y') as emrg_stat
+            , exmprs.mdtr_yn
+            , exmprs.rcpn_dt
+            , exmprs.cndt_dt
+            , exmprs.mdtr_site_cd
+        from (
+            select
+                pid
+                , rcpn_no
+                , prsc_cd
+                , prsc_nm
+                , mdcr_dr_id
+                , CONCAT('CS1008', prsc_prgr_stat_cd) as prsc_prgr_stat_cd
+                , hope_exrm_dept_sqno
+                , 'N' mdtr_yn
+                , rcpn_dt
+                , cndt_dt
+                , coalesce(mdtr_site_cd, '') AS mdtr_site_cd
+            from meddttpsn
+            where
+                exmn_hope_date BETWEEN #{prsc_date_from}::date AND #{prsc_date_to}::date
+                <if test="pid != null and !pid.equals('')">
+                    AND pid = #{pid}
+                </if>
+                AND hope_exrm_dept_sqno IN (
+                    <foreach collection="hope_exrm_cd" item="item" separator=",">
+                        #{item}::bigint
+                    </foreach>
+                )
+                and coalesce(dc_yn, 'N') = 'N'
+                AND COALESCE(mdcr_cncl_yn, 'N') = 'N'
+                AND COALESCE(mdtr_site_cd, '') NOT IN ('P', '99')
+            union all
+                select
+                    pid
+                    , rcpn_no
+                    , prsc_cd
+                    , prsc_nm
+                    , mdcr_dr_id
+                    , CONCAT('CS1015', prsc_prgr_stat_cd) AS prsc_prgr_stat_cd
+                    , hope_trrm_dept_sqno as hope_exrm_dept_sqno
+                    , (CASE
+                        WHEN prsc_prgr_stat_cd = 'N'
+                            THEN coalesce(
+                            (SELECT mdtr_rslt_rptg_yn
+                            FROM mshresltn
+                            WHERE pid = medrhbpcn.pid
+                              AND prsc_date = medrhbpcn.prsc_date
+                              AND prsc_sqno = medrhbpcn.prsc_sqno)
+                            , 'N')
+                        ELSE 'N' END
+                    ) AS mdtr_yn
+                    , null as rcpn_dt
+                    , null as cndt_dt
+                    , '' as mdtr_site_cd
+            from medrhbpcn
+            where
+                mdtr_hope_date BETWEEN #{prsc_date_from}::date AND #{prsc_date_to}::date
+                <if test="pid != null and !pid.equals('')">
+                    AND pid = #{pid}
+                </if>
+                AND hope_trrm_dept_sqno IN (
+                    <foreach collection="hope_exrm_cd" item="item" separator=",">
+                        #{item}::bigint
+                    </foreach>
+                )
+                and coalesce(dc_yn, 'N') = 'N'
+                AND COALESCE(mdcr_cncl_yn, 'N') = 'N'
+        ) exmprs
+        inner join hooptbaim ptbaim on exmprs.pid = ptbaim.pid
+        inner join cfgwuserm usemng on exmprs.mdcr_dr_id = usemng.usid
+        inner join cfgexmrmn dept on exmprs.hope_exrm_dept_sqno = dept.fclt_info_sqno
+        order by hope_exrm_nm, rcpn_dt, cndt_dt, pid, pt_nm, prsc_nm
+    </select>
+</mapper>

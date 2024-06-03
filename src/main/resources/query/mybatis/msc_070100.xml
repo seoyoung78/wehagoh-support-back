@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.MSC_070100.mapper.MSC_070100Mapper">
+
+
+	<!-- 카드목록 조회,
+	* 작성자 : 강현구
+	* 최종 수정일 : 2024-03-18 -->
+	<select id="rtrvCardList" resultType="com.duzon.lulu.service.MSC.MSC_070100.model.CardModel">
+    SELECT    mscemnrsn.rcpn_no,
+              mscemnrsn.cndt_dt::date AS cndt_dy,
+              TRIM( TRAILING '/'
+                    FROM 
+                    CONCAT( CASE WHEN SUM( CASE WHEN mscemnrsn.prsc_clsf_cd = 'C1' THEN 1
+                                                ELSE 0
+                                           END ) > 0 THEN '진단검사/'
+                                 ELSE ''
+                            END,
+                            CASE WHEN SUM( CASE WHEN mscemnrsn.prsc_clsf_cd = 'C3' 
+                                                AND  mscemnrsn.slip_cd like 'F%'   THEN 1
+                                                ELSE 0
+                                           END ) > 0 THEN '기능검사/'
+                                 ELSE ''
+                            END,
+                            CASE WHEN SUM( CASE WHEN mscemnrsn.prsc_clsf_cd = 'C2' THEN 1
+                                                ELSE 0 
+                                           END ) > 0 THEN '영상검사/'
+                                 ELSE ''
+                            END,
+                            CASE WHEN SUM( CASE WHEN mscemnrsn.prsc_clsf_cd = 'C3'
+                                                AND mscemnrsn.slip_cd = 'EN01' THEN 1 
+                                                ELSE 0
+                                           END ) > 0 THEN '내시경검사/'
+                                 ELSE ''
+                            END ) ) AS prsc_clsf_nm_list,
+              TRIM( TRAILING '/' 
+                    FROM 
+                    CONCAT( CASE WHEN SUM( CASE WHEN mscemnrsn.prsc_clsf_cd = 'C1' THEN 1
+                                                ELSE 0
+                                           END ) > 0 THEN 'C1/'
+                                 ELSE ''
+                            END,
+                            CASE WHEN SUM( CASE	WHEN mscemnrsn.prsc_clsf_cd = 'C3'
+                                                AND mscemnrsn.slip_cd like 'F%' THEN 1
+                                                ELSE 0
+                                           END ) > 0 THEN 'C3-F/' 
+                                 ELSE ''
+                            END,
+                            CASE WHEN SUM( CASE WHEN mscemnrsn.prsc_clsf_cd = 'C2' THEN 1
+                                                ELSE 0
+                                           END ) > 0 THEN 'C2/'
+                                 ELSE ''
+                            END,
+                            CASE WHEN SUM( CASE WHEN mscemnrsn.prsc_clsf_cd = 'C3'
+                                                AND mscemnrsn.slip_cd = 'EN01' THEN 1
+                                                ELSE 0
+                                           END ) > 0 then 'C3-EN/'
+                                 ELSE ''
+                            END ) ) AS prsc_clsf_cd_list,
+              cfgwuserm.user_nm as mdcr_dr_nm
+    FROM      mscemnrsn mscemnrsn
+    JOIN      medprscdm medprscdm
+    ON        medprscdm.prsc_cd = mscemnrsn.exmn_cd
+    AND       mscemnrsn.cndt_dt::date between #{date_from}::date and #{date_to}::date
+    AND       mscemnrsn.pid = #{pid}::text
+    <if test='keyword != null'>
+    AND medprscdm.prsc_nm like concat('%',#{keyword},'%')
+    </if>
+    JOIN      hoootrcin
+    ON        hoootrcin.rcpn_no = mscemnrsn.rcpn_no
+    AND       hoootrcin.hstr_stat_cd = 'Y'
+    JOIN      cfgwuserm
+    ON        cfgwuserm.usid = hoootrcin.mdcr_dr_id
+    GROUP BY  mscemnrsn.rcpn_no,
+              cndt_dy,
+              mdcr_dr_nm
+    ORDER BY  cndt_dy DESC, mscemnrsn.rcpn_no DESC
+    </select>
+
+	<!-- 진단검사결과목록 조회 
+	* 작성자 : 강현구
+	* 최종수정일 : 2024-03-18 -->
+	<select id="rtrvMslRsltList"
+		resultType="com.duzon.lulu.service.MSC.MSC_070100.model.MslRsltModel">
+    SELECT    t.exmn_cd,                          -- 검사코드.
+              t5.prsc_nm,                         -- 검사명.
+              t.prsc_date,                        -- 처방 일자.
+              t.rptg_dt::date AS rptg_dy,         -- 보고일자
+              t.exmn_rslt_1,                      -- 단문검사결과.
+              t.exmn_rslt_2,                      -- 장문검사결과.
+              t.rfvl_lwlm_valu,                   -- 진검 참고치 하단.
+              t.rfvl_uplm_valu,                   -- 진검 참고치 상단.
+              t.exmn_rslt_unit_nm,                -- 단위코드.
+              t3.user_nm AS exmn_pich_nm,         -- 검사담당자 이름.
+              t4.spcm_labl_nm,                    -- 검체명
+              COALESCE(t.rfvl_lwlm_rang_type_cd, 'B') AS rfvl_lwlm_rang_type_cd,
+              COALESCE(t.rfvl_uplm_rang_type_cd, 'M') AS rfvl_uplm_rang_type_cd
+    FROM      mscemnrsn t
+    JOIN      meddttpsn t2                        -- 검체 대표 처방 조인.
+    ON        t2.pid = t.pid
+    AND       t2.prsc_date = t.prsc_date
+    AND       t2.prsc_sqno = t.prsc_sqno
+    AND       t.rcpn_no = #{rcpn_no}::text
+    AND       t.cndt_dt::date = #{cndt_dy}::date
+    JOIN      mscspccdm t4
+    ON        t4.spcm_cd = t2.spcm_cd_1
+    JOIN      medprscdm t5
+    ON        t5.prsc_cd = t.exmn_cd
+    <if test='keyword != null and keyword.length > 0'>
+    AND       t5.prsc_nm LIKE CONCAT('%',#{keyword},'%')
+    </if>
+    LEFT JOIN cfgwuserm t3
+    ON        t3.usid = t2.exmn_pich_id
+    ORDER BY  t.exmn_cd, t.prsc_date
+	</select>
+
+	<!-- 기능검사결과 조회 -->
+	<select id="rtrvMsfRsltList"
+		resultType="com.duzon.lulu.service.MSC.MSC_070100.model.MsfRsltModel">
+		select
+			mscemnrsn.exmn_cd, --검사코드.
+			meddttpsn.prsc_nm, --검사명
+			mscemnrsn.exmn_rslt_2,
+			mscemnrsn.prsc_date, -- 처방 일자.
+			mscemnrsn.rptg_dt::date as rptg_dy, -- 보고일자
+		    t3.user_nm AS exmn_pich_nm, -- 검사담당자 이름.
+			mscemnrsn.prsc_sqno -- 처방일련번호, fileList 조회용.
+		from mscemnrsn mscemnrsn
+		join meddttpsn meddttpsn -- 검사처방코드마스터(검사명가져오기위함)
+			on meddttpsn.pid = mscemnrsn.pid
+			and meddttpsn.prsc_date = mscemnrsn.prsc_date
+			and meddttpsn.prsc_sqno = mscemnrsn.prsc_sqno
+			and mscemnrsn.prsc_clsf_cd = 'C3'
+			and mscemnrsn.slip_cd like 'F%'
+			and mscemnrsn.cndt_dt::date = #{cndt_dy}::date
+			and mscemnrsn.rcpn_no = #{rcpn_no}::text
+			<if test='keyword != null and keyword.length > 0'> -- 처방명 검색 시 일치하는 처방명만 가져오기 위해
+				and meddttpsn.prsc_nm like concat('%',#{keyword},'%')
+			</if>
+        LEFT JOIN cfgwuserm t3
+        ON        t3.usid = meddttpsn.exmn_pich_id
+		order by mscemnrsn.exmn_cd, mscemnrsn.prsc_date
+	</select>
+	
+	<!-- 영상검사결과 조회 -->
+	<select id="rtrvMsrRsltList" resultType="com.duzon.lulu.service.MSC.MSC_070100.model.MsrRsltModel">
+		select
+			mscemnrsn.exmn_cd,             --검사코드.
+			meddttpsn.prsc_nm,             --검사명
+			mscemnrsn.exmn_rslt_2,
+			mscemnrsn.prsc_date, -- 처방 일자.
+			mscemnrsn.rptg_dt::date as rptg_dy, -- 보고일자
+		    t3.user_nm AS exmn_pich_nm, -- 검사담당자 이름.
+			meddttpsn.pacs_no,
+			meddttpsn.pacs_co_cd
+		from mscemnrsn mscemnrsn
+		JOIN meddttpsn meddttpsn -- 검사처방코드마스터(검사명가져오기위함)
+			on meddttpsn.pid = mscemnrsn.pid
+			and meddttpsn.prsc_date = mscemnrsn.prsc_date
+			and meddttpsn.prsc_sqno = mscemnrsn.prsc_sqno
+			and mscemnrsn.prsc_clsf_cd = 'C2'
+			and mscemnrsn.cndt_dt::date = #{cndt_dy}::date
+			and mscemnrsn.rcpn_no = #{rcpn_no}::text
+			<if test='keyword != null and keyword.length > 0'> -- 처방명 검색 시 일치하는 처방명만 가져오기 위해
+				and meddttpsn.prsc_nm like concat('%',#{keyword},'%')
+			</if>
+        LEFT JOIN cfgwuserm t3
+        ON        t3.usid = meddttpsn.exmn_pich_id
+		order by mscemnrsn.exmn_cd, mscemnrsn.prsc_date
+	</select>
+	
+	<!-- 내시경검사결과 조회 -->
+	<select id="rtrvMseRsltList" resultType="com.duzon.lulu.service.MSC.MSC_070100.model.MseRsltModel">
+    SELECT  mscemnrsn.exmn_cd,                  -- 검사코드.
+            meddttpsn.prsc_nm,                  -- 검사명
+            mscemnrsn.prsc_date,                -- 처방 일자.
+            mscemnrsn.rptg_dt::date as rptg_dy, -- 보고일자
+            t3.user_nm AS exmn_pich_nm,         -- 검사담당자 이름.
+            meddttpsn.prsc_sqno,
+            meddttpsn.mdtr_site_cd,
+            t4.user_nm as iptn_prsn_nm          -- 판독자.
+    FROM    mscemnrsn mscemnrsn
+    JOIN    meddttpsn meddttpsn                 -- 검사처방코드마스터(검사명가져오기위함)
+    ON  meddttpsn.pid = mscemnrsn.pid
+    AND meddttpsn.prsc_date = mscemnrsn.prsc_date
+    AND meddttpsn.prsc_sqno = mscemnrsn.prsc_sqno
+    AND mscemnrsn.prsc_clsf_cd = 'C3'
+    AND mscemnrsn.slip_cd = 'EN01'
+    AND mscemnrsn.cndt_dt::date = #{cndt_dy}::date
+    AND mscemnrsn.rcpn_no = #{rcpn_no}::text
+    <if test='keyword != null and keyword.length > 0'> -- 처방명 검색 시 일치하는 처방명만 가져오기 위해
+    AND meddttpsn.prsc_nm like concat('%',#{keyword},'%')
+    </if>
+    LEFT JOIN cfgwuserm t3
+    ON        t3.usid = meddttpsn.exmn_pich_id
+    LEFT JOIN cfgwuserm t4
+    ON        t4.usid = meddttpsn.iptn_prsn_id
+    ORDER BY  mscemnrsn.exmn_cd, mscemnrsn.prsc_date
+	</select>
+	
+	<!-- 진단검사 누적결과조회
+	* 작성자 : 강현구
+	* 최종 수정일 : 2024-03-18 -->
+	<select id="rtrvAccRsltList"
+		resultType="com.duzon.lulu.service.MSC.MSC_070100.model.AccRsltModel">
+    SELECT
+             t.rcpn_no,                         --외래 접수번호.
+             t4.exmn_date as cndt_dy,           --검사시행일.
+             t.exmn_cd,                         --검사코드.
+             t5.prsc_nm,                        --처방명.
+             t.rfvl_lwlm_valu,                  --참고치 하한.
+             t.rfvl_uplm_valu,                  --참고치 상한.
+             t.exmn_rslt_unit_nm,               --검사결과 단위명.
+             t.exmn_rslt_1,                     --단문 결과.
+             t.rslt_type_dvsn,                  --결과 유형.
+             COALESCE(t.rfvl_lwlm_rang_type_cd, 'B') AS rfvl_lwlm_rang_type_cd,
+             COALESCE(t.rfvl_uplm_rang_type_cd, 'M') AS rfvl_uplm_rang_type_cd
+    FROM     mscemnrsn t
+    JOIN     meddttpsn t3
+    ON       t3.pid = t.pid
+    AND      t3.prsc_date = t.prsc_date
+    AND      t3.prsc_sqno = t.prsc_sqno
+    AND      t.pid = #{pid}
+    JOIN     mslspcprn t4
+    ON       t4.spcm_no = t3.spcm_no_1
+    AND      t4.exmn_date between #{from}::date and #{to}::date
+    JOIN     medprscdm t5
+    ON       t5.prsc_cd = t.exmn_cd
+    <if test='keyword != null and keyword.length > 0'>
+    AND      t5.prsc_nm LIKE CONCAT('%',#{keyword},'%')
+    </if>
+	</select>
+</mapper>

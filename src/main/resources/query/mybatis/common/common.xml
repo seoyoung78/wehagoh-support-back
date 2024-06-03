@@ -1,0 +1,545 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.common.mapper.CommonMapper">
+<!--    공통코드 조회     -->
+    <select id="selectCommonCode" resultType="com.duzon.lulu.service.MSC.common.model.Common.CommonCode">
+        SELECT cmcd_clsf_cd, cmcd_cd, cmcd_nm, cmcd_expl,
+            cmcd_figr_valu1, cmcd_figr_valu2, cmcd_figr_valu3,
+            cmcd_char_valu1, cmcd_char_valu2, cmcd_char_valu3
+        FROM mono.icmcomcld
+        WHERE cmcd_clsf_cd IN
+        <foreach collection="clsfList" item="item" open="(" separator="," close=")">
+            #{item}
+        </foreach>
+        <if test="cdList != null and cdList.size > 0">
+            AND cmcd_cd IN
+            <foreach collection="cdList" item="item" open="(" separator="," close=")">
+                #{item}
+            </foreach>
+        </if>
+          AND CAST(#{date} AS date) BETWEEN cmcd_apdy AND cmcd_endy
+        ORDER BY cmcd_clsf_cd, cmcd_sort_seq
+    </select>
+
+<!--    부서일련번호 조회     -->
+    <select id="selectDeptCode" resultType="java.util.HashMap">
+        SELECT fclt_info_sqno as value, exrm_detl_info AS text, exrm_cd AS exrm_clsf_cd
+        FROM cfgexmrmn
+        WHERE exrm_cd IS NOT NULL
+		<if test='isSet != null'>
+			AND del_yn = 'N'
+		</if>
+		  AND exrm_cd IN (SELECT cmcd_cd FROM mono.icmcomcld WHERE cmcd_clsf_cd = 'CA1008')
+		ORDER BY text
+    </select>
+
+<!--    환자 검색 진료된 외래접수환자만 -->
+    <select id="searchPatient" parameterType="com.duzon.lulu.service.MSC.common.model.Common.SearchPatientParam" resultType="com.duzon.lulu.service.MSC.common.model.Common.SearchPatientResult">
+		SELECT pid,	concat(pt_nm, coalesce(nm_dscm_dvcd, '')) AS pt_nm
+			, TO_CHAR((CASE WHEN (COALESCE(pt_srrn, '') = '' OR COALESCE(pt_frrn, '') = '') THEN NULL
+                                  WHEN SUBSTRING(pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', pt_frrn)
+                                  WHEN SUBSTRING(pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', pt_frrn)
+                                  ELSE CONCAT('20', pt_frrn)
+                END)::date,'yyyymmdd') AS dobr
+   		FROM  hooptbaim
+   		WHERE del_yn = 'N'
+		  AND (LOWER(pt_nm) LIKE LOWER(CONCAT('%', #{keyword}::text, '%'))
+			OR LOWER(pid) LIKE LOWER(CONCAT('%', #{keyword}::text, '%'))
+			<if test="isDobr != null and isDobr == true">
+				OR pt_frrn = #{keyword}::text
+			</if>)
+   		order by pid
+      </select>
+
+	<!-- 미시행미완료 목록 조회 -->
+	<select id="rtrvUnactgUncmplList"
+		parameterType="map"
+		resultType="com.duzon.lulu.service.MSC.common.model.Common.UnactgUncmplModel">
+		select
+			CASE
+				WHEN hooptbaim.undn_yn = 'N' THEN TO_CHAR((CASE WHEN (COALESCE(hooptbaim.pt_srrn, '') = '' OR COALESCE(hooptbaim.pt_frrn, '') = '') THEN NULL
+															  WHEN SUBSTRING(hooptbaim.pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', hooptbaim.pt_frrn)
+															  WHEN SUBSTRING(hooptbaim.pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', hooptbaim.pt_frrn)
+															  ELSE CONCAT('20', hooptbaim.pt_frrn)
+											END)::date,'yyyymmdd')
+				ELSE ''
+			END as dobr,
+			hooptbaim.pt_nm,
+			hooptbaim.nm_dscm_dvcd,
+			(select cmcd_smmr_nm from mono.icmcomcld where cmcd_clsf_cd = 'CZ1001' and cmcd_cd = hooptbaim.sex_cd) as sex_labl,
+			mono.fn_get_age(CASE WHEN (COALESCE(hooptbaim.pt_srrn, '') = '' OR COALESCE(hooptbaim.pt_frrn, '') = '') THEN NULL
+                                         WHEN SUBSTRING(hooptbaim.pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', hooptbaim.pt_frrn)
+                                         WHEN SUBSTRING(hooptbaim.pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', hooptbaim.pt_frrn)
+                                         ELSE CONCAT('20', hooptbaim.pt_frrn)
+                    END, '5') as age_labl,
+			COALESCE(cfgwuserm.user_nm, '') as mdcr_user_nm,
+			COALESCE(to_char(undorcpn.exmn_hope_dt, '예약 YYYY-MM-DD HH24:MI'), to_char(undorcpn.rcpn_dt, 'YYYY-MM-DD HH24:MI')) as rcpn_dt,
+			undorcpn.pid,
+			undorcpn.rcpn_sqno,
+			undorcpn.hope_exrm_cd,
+			undorcpn.exmn_hope_date,
+			undorcpn.mdcr_date::text,
+			(
+				<choose>
+					<when test='"Y".equals(uncmpl_yn)'>
+						case
+			    			when undorcpn.min_prsc_prgr_stat_cd &gt; 'M' then 'N'
+			    			when undorcpn.min_prsc_prgr_stat_cd &gt; 'G' then 'M'
+			    			else 'E'
+						end
+					</when>
+					<otherwise>
+						undorcpn.min_prsc_prgr_stat_cd
+					</otherwise>
+				</choose>
+			) as prsc_prgr_stat_cd,
+			undorcpn.exmn_hope_dt,
+			undorcpn.prsc_date, -- 영상검사에서 사용.
+			undorcpn.prsc_sqno, -- 영상검사에서 사용.
+			medemgstn.emrg_pt_yn
+			, CONCAT(
+			(SELECT cmcd_smmr_nm FROM mono.icmcomcld WHERE cmcd_clsf_cd = 'CZ1001' AND cmcd_cd = hooptbaim.sex_cd)
+			, (CASE WHEN hooptbaim.undn_yn = 'Y' AND hooptbaim.sex_cd != 'O'
+					THEN  '/미상'
+				WHEN hooptbaim.undn_yn = 'N'
+					THEN CONCAT('/',
+					mono.fn_get_age(case when coalesce(hooptbaim.pt_srrn, '') = '' OR coalesce(hooptbaim.pt_frrn, '') = '' then to_char(CURRENT_DATE, 'YYYYMMDD')
+					when substring(hooptbaim.pt_srrn, 1, 1) = '1'
+						or  substring(hooptbaim.pt_srrn, 1, 1) = '2'
+						or  substring(hooptbaim.pt_srrn, 1, 1) = '5'
+						or  substring(hooptbaim.pt_srrn, 1, 1) = '6' then concat('19', hooptbaim.pt_frrn)
+					when substring(hooptbaim.pt_srrn, 1, 1) = '9'
+						or  substring(hooptbaim.pt_srrn, 1, 1) = '0' then concat('18',hooptbaim. pt_frrn)
+					else concat('20', hooptbaim.pt_frrn)
+					end, '5'))
+				ELSE ''
+				END)
+			) as sex_age
+		from (
+			select 
+				hoootrcin.pid,
+				hoootrcin.rcpn_no as rcpn_sqno, 
+				hoootrcin.mdcr_dr_id,
+				hoootrcin.mdcr_date,
+				<choose>
+					<when test='"F1".equals(prsc_clsf_cd)'>
+						prsc.mdtr_hope_date as exmn_hope_date,
+						prsc.hope_trrm_dept_sqno as hope_exrm_cd,
+					</when>
+					<otherwise>
+						<choose>
+							<when test='"Y".equals(uncmpl_yn)'>
+								to_char(prsc.cndt_dt, 'YYYY-MM-DD')
+							</when>
+							<otherwise>
+								prsc.exmn_hope_date
+							</otherwise>
+						</choose>
+						as exmn_hope_date,
+						prsc.hope_exrm_dept_sqno as hope_exrm_cd,
+					</otherwise>
+				</choose>
+				min(prsc.prsc_prgr_stat_cd) as min_prsc_prgr_stat_cd,
+				min(prsc.rcpn_dt) as rcpn_dt,	--가장 빠른 검사실 접수 일시
+				min(prsc.prsc_date) as prsc_date, -- 영상검사에서 사용.
+				min(prsc.prsc_sqno) as prsc_sqno, -- 영상검사에서 사용.
+				<choose>
+					<when test='"F1".equals(prsc_clsf_cd)'>
+						min(prsc.mdtr_hope_dt) as exmn_hope_dt
+					</when>
+					<otherwise>
+						min(prsc.exmn_hope_dt) as exmn_hope_dt
+					</otherwise>
+				</choose>
+			from
+				hoootrcin hoootrcin
+				join
+				<choose>
+					<when test='"F1".equals(prsc_clsf_cd)'>
+						medrhbpcn
+					</when>
+					<otherwise>
+						meddttpsn
+					</otherwise>
+				</choose>
+				 	prsc on hoootrcin.pid = prsc.pid and hoootrcin.rcpn_no = prsc.rcpn_no
+				<if test='"C3".equals(prsc_clsf_cd) and "Y".equals(endo_flag)'>
+					and mdtr_site_cd IN ('S', 'C') -- 내시경 검사 조건문
+				</if>
+				where
+					hoootrcin.hstr_stat_cd = 'Y'
+					and prsc.prsc_clsf_cd = #{prsc_clsf_cd}
+					and prsc.dc_yn = 'N'
+					AND COALESCE(prsc.mdcr_cncl_yn, 'N') = 'N'
+					<if test='"Y".equals(uncmpl_yn)'>
+						and prsc.prsc_prgr_stat_cd between 'E' and 'M'
+					</if>
+					and
+					<choose>
+						<when test='"F1".equals(prsc_clsf_cd)'>
+							prsc.hope_trrm_dept_sqno
+						</when>
+						<otherwise>
+							prsc.hope_exrm_dept_sqno
+						</otherwise>
+					</choose>
+					<choose>
+						<when test="hope_exrm_dept_sqno_list!=null and hope_exrm_dept_sqno_list.size > 0">
+							<foreach collection="hope_exrm_dept_sqno_list" item="hope_exrm_dept_sqno" separator="," open="in (" close=")">
+								#{hope_exrm_dept_sqno}::int8
+							</foreach>
+						</when>
+						<otherwise>
+							&lt; 0
+						</otherwise>
+					</choose>
+				group by
+					hoootrcin.rcpn_no,
+					hoootrcin.pid,
+					hoootrcin.mdcr_dr_id,
+					hoootrcin.mdcr_date,			
+					<choose>
+						<when test='"F1".equals(prsc_clsf_cd)'>
+							prsc.mdtr_hope_date,
+							prsc.hope_trrm_dept_sqno
+						</when>
+						<otherwise>
+							<choose>
+								<when test='"Y".equals(uncmpl_yn)'>
+									to_char(prsc.cndt_dt, 'YYYY-MM-DD')
+								</when>
+								<otherwise>
+									prsc.exmn_hope_date
+								</otherwise>
+							</choose>,
+							prsc.hope_exrm_dept_sqno
+						</otherwise>
+					</choose>
+				<if test='!"Y".equals(uncmpl_yn)'>
+					having min(prsc.prsc_prgr_stat_cd) &lt; 'E'
+				</if>
+		) undorcpn
+			left join cfgwuserm on undorcpn.mdcr_dr_id = cfgwuserm.usid
+			left join medemgstn medemgstn on medemgstn.rcpn_no = undorcpn.rcpn_sqno and medemgstn.emrg_pt_yn = 'Y'
+			, hooptbaim hooptbaim
+		WHERE hooptbaim.pid = undorcpn.pid
+		and hooptbaim.del_yn = 'N'
+			order by
+				emrg_pt_yn,
+				emrg_pt_stup_dt,
+				prsc_prgr_stat_cd,
+				<choose>
+					<when test='!"Y".equals(uncmpl_yn)'>
+						exmn_hope_dt,
+						rcpn_dt nulls first,
+					</when>
+					<otherwise>
+						exmn_hope_date,
+					</otherwise>
+				</choose>
+				mdcr_date,
+				pt_nm
+	</select>
+
+	<!-- 처방 목록 조회 -->
+	<select id="getPrscList"
+		parameterType="com.duzon.lulu.service.MSC.common.model.Common.GetPrscListParam"
+		resultType="com.duzon.lulu.service.MSC.common.model.Common.GetPrscListResult">
+		SELECT prsc_date,
+			prsc_sqno,
+			sort_sqno,
+			CASE
+				WHEN rcpt_stat_cd = 'Y' then '완료'
+				WHEN rcpt_stat_cd = 'R' then '환불'
+				ELSE '미납'
+			END as rcpt_stat_cd,
+			prsc_cd,
+			prsc_nm,
+			(SELECT user_nm FROM cfgwuserm WHERE usid = prsc_dr_id LIMIT 1) as user_nm,
+			dc_yn,
+			dc_resn,
+			dc_resn_cd,
+			prsc_clsf_cd,
+			coalesce((
+				SELECT c.cmcd_nm
+				FROM mono.icmcomcld c
+				WHERE c.cmcd_cd = prsc_pay_dvcd
+					AND c.cmcd_clsf_cd = 'CB3001'
+				), '-' ) as prsc_pay_dvcd
+		FROM medprespv
+		WHERE rcpn_no = #{rcpn_no}
+		AND dc_yn = 'N'
+		AND COALESCE(mdcr_cncl_yn, 'N') = 'N'
+		ORDER BY sort_sqno
+	</select>
+
+	<!--    환자정보 조회     -->
+	<select id="selectPatientInfo" resultType="com.duzon.lulu.service.MSC.common.model.Common.PatientInfo">
+		select
+			hooptbaim.pid,
+			CONCAT(hooptbaim.pt_nm, coalesce(hooptbaim.nm_dscm_dvcd, '')) AS pt_nm,
+			hooptbaim.pt_nm as pt_nm_only,
+			hooptbaim.sex_cd,
+			(select cmcd_smmr_nm from mono.icmcomcld where cmcd_clsf_cd = 'CZ1001' and cmcd_cd = sex_cd) as sex_nm,
+			hooptbaim.undn_yn,
+			TO_CHAR((CASE WHEN (COALESCE(hooptbaim.pt_srrn, '') = '' OR COALESCE(hooptbaim.pt_frrn, '') = '') THEN NULL
+															  WHEN SUBSTRING(hooptbaim.pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', hooptbaim.pt_frrn)
+															  WHEN SUBSTRING(hooptbaim.pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', hooptbaim.pt_frrn)
+															  ELSE CONCAT('20', hooptbaim.pt_frrn)
+											END)::date,'yyyymmdd') dobr,
+			mono.fn_get_age(case when coalesce(hooptbaim.pt_srrn, '') = '' OR coalesce(hooptbaim.pt_frrn, '') = '' then to_char(CURRENT_DATE, 'YYYYMMDD')
+				when substring(hooptbaim.pt_srrn, 1, 1) = '1'
+					or  substring(hooptbaim.pt_srrn, 1, 1) = '2'
+					or  substring(hooptbaim.pt_srrn, 1, 1) = '5'
+					or  substring(hooptbaim.pt_srrn, 1, 1) = '6' then concat('19', hooptbaim.pt_frrn)
+				when substring(hooptbaim.pt_srrn, 1, 1) = '9'
+					or  substring(hooptbaim.pt_srrn, 1, 1) = '0' then concat('18',hooptbaim. pt_frrn)
+				else concat('20', hooptbaim.pt_frrn)
+				end, '2') As age,
+				mono.fn_get_age(case when coalesce(hooptbaim.pt_srrn, '') = '' OR coalesce(hooptbaim.pt_frrn, '') = '' then to_char(CURRENT_DATE, 'YYYYMMDD')
+				when substring(hooptbaim.pt_srrn, 1, 1) = '1'
+				or  substring(hooptbaim.pt_srrn, 1, 1) = '2'
+				or  substring(hooptbaim.pt_srrn, 1, 1) = '5'
+				or  substring(hooptbaim.pt_srrn, 1, 1) = '6' then concat('19', hooptbaim.pt_frrn)
+				when substring(hooptbaim.pt_srrn, 1, 1) = '9'
+				or  substring(hooptbaim.pt_srrn, 1, 1) = '0' then concat('18',hooptbaim. pt_frrn)
+				else concat('20', hooptbaim.pt_frrn)
+				end, '5') As ageWithUnit,
+			CONCAT(
+			(SELECT cmcd_smmr_nm FROM mono.icmcomcld WHERE cmcd_clsf_cd = 'CZ1001' AND cmcd_cd = hooptbaim.sex_cd)
+			, (CASE WHEN hooptbaim.undn_yn = 'Y' AND hooptbaim.sex_cd != 'O'
+				THEN  '/미상'
+				WHEN hooptbaim.undn_yn = 'N'
+					THEN CONCAT('/',
+							 mono.fn_get_age(case when coalesce(hooptbaim.pt_srrn, '') = '' OR coalesce(hooptbaim.pt_frrn, '') = '' then to_char(CURRENT_DATE, 'YYYYMMDD')
+							when substring(hooptbaim.pt_srrn, 1, 1) = '1'
+								or  substring(hooptbaim.pt_srrn, 1, 1) = '2'
+								or  substring(hooptbaim.pt_srrn, 1, 1) = '5'
+								or  substring(hooptbaim.pt_srrn, 1, 1) = '6' then concat('19', hooptbaim.pt_frrn)
+							when substring(hooptbaim.pt_srrn, 1, 1) = '9'
+								or  substring(hooptbaim.pt_srrn, 1, 1) = '0' then concat('18',hooptbaim. pt_frrn)
+							else concat('20', hooptbaim.pt_frrn)
+							end, '5'))
+				ELSE ''
+			END)
+			) as age_cd
+			, COALESCE(hooptbaim.pt_pctr_lctn, '') AS pt_pctr_lctn,
+			hoootrcin.mdcr_date,
+			COALESCE(hooptbaim.dsbl_yn, 'N') AS dsbl_yn,
+			COALESCE(hooptbaim.frnr_yn, 'N') AS frnr_yn,
+			COALESCE(hooptbaim.prgn_yn, 'N') AS prgn_yn,
+			COALESCE(hooptbaim.vip_pt_yn, 'N') AS vip_pt_yn,
+			COALESCE(hooptbaim.priv_pt_yn, 'N') AS priv_pt_yn,
+			(SELECT cmcd_nm FROM mono.icmcomcld WHERE cmcd_clsf_cd = 'CB4009' AND cmcd_cd = hoootrcin.cmhs_prps_cd) As cmhs_prps_nm,
+			(SELECT c.dgns_nm
+				FROM medptdgnn c
+				where c.rcpn_no = hoootrcin.rcpn_no
+				AND c.pid = hooptbaim.pid
+				AND c.dvsn = '1'
+				AND c.del_yn = 'N'
+			LIMIT 1) AS dgns_nm,
+			COALESCE((SELECT d.memo_cnts FROM hooptmein d WHERE d.pid = hooptbaim.pid AND d.memo_dvcd = 'PAT'), '') AS memo_cnts,
+			COALESCE(e.user_nm, '') AS mdcr_dr_nm,
+			(SELECT
+				case min(meddttpsn.rcpt_stat_cd)
+					when 'Y' then '완료'
+					else '미완료'
+				end
+			FROM meddttpsn
+			WHERE meddttpsn.rcpn_no = hoootrcin.rcpn_no
+			AND meddttpsn.prsc_clsf_cd = #{prsc_clsf_cd}::text
+			AND meddttpsn.hope_exrm_dept_sqno = #{hope_exrm_cd}::int8
+			AND meddttpsn.dc_yn = 'N'
+			AND COALESCE(meddttpsn.mdcr_cncl_yn, 'N') = 'N'
+			) as rcpt_stat_nm
+			, hoootrcin.pt_dvcd
+			, hooptbaim.abo_type_cd
+			, CASE hooptbaim.rh_type_cd
+			WHEN 'Y' THEN '-'
+			WHEN 'N' THEN '+'
+			ELSE '' END AS rh_type_cd
+			, COALESCE(CONCAT(hooptbaim.basc_addr, ' ', hooptbaim.detl_addr), '') as addr
+			, hooptbaim.bind_pid
+			, coalesce(e.sign_lctn, '') as mdcr_sign
+			, COALESCE(hooptbaim.use_yn, 'Y') AS use_yn
+			, (SELECT pt_nm FROM hooptbaim b WHERE b.pid = hooptbaim.bind_pid) AS bind_pt_nm
+		FROM hoootrcin
+			join hooptbaim on hoootrcin.pid = hooptbaim.pid
+			, cfgwuserm e
+		WHERE hoootrcin.rcpn_no = #{rcpn_sqno}::text
+			AND hoootrcin.hstr_stat_cd = 'Y'
+			AND e.usid = hoootrcin.mdcr_dr_id
+		LIMIT 1
+	</select>
+
+	<!--    환자정보 조회     -->
+	<select id="selectOnlyPatient" resultType="com.duzon.lulu.service.MSC.common.model.Common.PatientInfo">
+		select
+			pid,
+			clph_no,
+			CONCAT(pt_nm, coalesce(nm_dscm_dvcd, '')) AS pt_nm,
+			pt_nm as pt_nm_only,
+			sex_cd,
+			(select cmcd_smmr_nm from mono.icmcomcld where cmcd_clsf_cd = 'CZ1001' and cmcd_cd = sex_cd) as sex_nm,
+			undn_yn,
+			TO_CHAR((CASE WHEN (COALESCE(pt_srrn, '') = '' OR COALESCE(pt_frrn, '') = '') THEN NULL
+															  WHEN SUBSTRING(pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', pt_frrn)
+															  WHEN SUBSTRING(pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', pt_frrn)
+															  ELSE CONCAT('20', pt_frrn)
+											END)::date,'yyyy-mm-dd'),
+			mono.fn_get_age(case when coalesce(pt_srrn, '') = '' OR coalesce(pt_frrn, '') = '' then to_char(CURRENT_DATE, 'YYYYMMDD')
+				when substring(pt_srrn, 1, 1) = '1'
+					or  substring(pt_srrn, 1, 1) = '2'
+					or  substring(pt_srrn, 1, 1) = '5'
+					or  substring(pt_srrn, 1, 1) = '6' then concat('19', pt_frrn)
+				when substring(pt_srrn, 1, 1) = '9'
+					or  substring(pt_srrn, 1, 1) = '0' then concat('18', pt_frrn)
+				else concat('20', pt_frrn)
+				end, '2') As age,
+			mono.fn_get_age(case when coalesce(hooptbaim.pt_srrn, '') = '' OR coalesce(hooptbaim.pt_frrn, '') = '' then to_char(CURRENT_DATE, 'YYYYMMDD')
+				when substring(hooptbaim.pt_srrn, 1, 1) = '1'
+					or  substring(hooptbaim.pt_srrn, 1, 1) = '2'
+					or  substring(hooptbaim.pt_srrn, 1, 1) = '5'
+					or  substring(hooptbaim.pt_srrn, 1, 1) = '6' then concat('19', hooptbaim.pt_frrn)
+				when substring(hooptbaim.pt_srrn, 1, 1) = '9'
+					or  substring(hooptbaim.pt_srrn, 1, 1) = '0' then concat('18',hooptbaim. pt_frrn)
+				else concat('20', hooptbaim.pt_frrn)
+				end, '5') As ageWithUnit,
+			CONCAT(
+				(SELECT cmcd_smmr_nm FROM mono.icmcomcld WHERE cmcd_clsf_cd = 'CZ1001' AND cmcd_cd = sex_cd)
+				, (CASE WHEN undn_yn = 'Y' AND sex_cd != 'O'
+					THEN  '/미상'
+					WHEN undn_yn = 'N'
+					THEN CONCAT('/',
+						mono.fn_get_age(case when coalesce(pt_srrn, '') = '' OR coalesce(pt_frrn, '') = '' then to_char(CURRENT_DATE, 'YYYYMMDD')
+						when substring(pt_srrn, 1, 1) = '1'
+							or  substring(pt_srrn, 1, 1) = '2'
+							or  substring(pt_srrn, 1, 1) = '5'
+							or  substring(pt_srrn, 1, 1) = '6' then concat('19', pt_frrn)
+						when substring(pt_srrn, 1, 1) = '9'
+							or  substring(pt_srrn, 1, 1) = '0' then concat('18', pt_frrn)
+						else concat('20', pt_frrn)
+						end, '5'))
+					ELSE ''
+				END)
+			) as age_cd,
+			COALESCE(pt_pctr_lctn, '') AS pt_pctr_lctn,
+			COALESCE(dsbl_yn, 'N') AS dsbl_yn,
+			COALESCE(frnr_yn, 'N') AS frnr_yn,
+			COALESCE(prgn_yn, 'N') AS prgn_yn,
+			COALESCE(vip_pt_yn, 'N') AS vip_pt_yn,
+			COALESCE(priv_pt_yn, 'N') AS priv_pt_yn,
+			COALESCE((SELECT d.memo_cnts FROM hooptmein d WHERE d.pid = hooptbaim.pid AND d.memo_dvcd = 'PAT'), '') AS memo_cnts
+			, COALESCE(CONCAT(basc_addr, ' ', detl_addr), '') as addr
+			, abo_type_cd
+			, CASE rh_type_cd
+				WHEN 'Y' THEN '-'
+				WHEN 'N' THEN '+'
+				ELSE '' END AS rh_type_cd
+			, bind_pid
+			, COALESCE(use_yn, 'Y') AS use_yn
+			, (SELECT pt_nm FROM hooptbaim b WHERE b.pid = hooptbaim.bind_pid) AS bind_pt_nm
+		FROM hooptbaim
+		WHERE hooptbaim.pid IN
+				<foreach collection="pid" item="pid" open="(" separator="," close=")">
+					#{pid}::text
+				</foreach>
+	</select>
+
+	<!--	PACS 목록 조회	-->
+	<select id="selectPacsList" resultType="com.duzon.lulu.service.MSC.common.model.Common.Pacs">
+		SELECT pacs_co_cd as pacs_cd, pacs_co_nm, irm_hspt_cd AS v_grp_id
+		FROM cmmpcsifm
+		WHERE use_yn = 'Y'
+		  AND itcn_detl_info = 'P'
+		  AND NOW()::date BETWEEN itcn_apdy AND itcn_endy
+	</select>
+
+	<!--    병원 정보 조회      -->
+	<select id="selectHspInfo" resultType="com.duzon.lulu.service.MSC.common.model.Common.Hospital">
+		SELECT rcpr_inst_rgno,
+				hspt_nm,
+				LEFT(pstl_no,2) AS hspt_city_no,
+				prod_yn,
+				hira_agnt_vsrn,
+				rprn_tel,
+				hspt_basc_addr,
+				hspt_detl_addr,
+				rprs_nm,
+				hspt_stmp_lctn,
+				hspt_logo_lctn
+		FROM cfghspinm
+	</select>
+
+<!--	병원 정보 설정 조회	-->
+	<select id="selectHsptSetting" resultType="com.duzon.lulu.service.MSC.common.model.Common.HsptSetting">
+		SELECT item_dvcd, item_stup_valu, use_yn,
+			(SELECT cmcd_nm
+			FROM mono.icmcomcld
+			WHERE cmcd_clsf_cd = 'CA1100'
+			AND cmcd_cd = cfghspind.item_dvcd) AS item_nm
+		FROM cfghspind
+		WHERE item_dvcd IN <foreach collection="cdList" item="item" open="(" separator="," close=")">#{item}</foreach>
+		AND use_yn = 'Y'
+		AND #{date}::date BETWEEN stup_apdy AND stup_endy
+	</select>
+
+<!--	검사 희망일 변경	-->
+	<update id="updateExmnHopeDate">
+		UPDATE meddttpsn
+		SET exmn_hope_date = CAST(#{exmn_hope_date} AS date)
+			,exmn_hope_dt = #{exmn_hope_dt}::timestamp
+			,last_updt_usid = #{portal_id}
+			,last_updt_dt = CURRENT_TIMESTAMP
+		WHERE pid = #{pid}
+		AND prsc_date = CAST(#{prsc_date} AS date)
+		AND prsc_sqno = CAST(#{prsc_sqno} AS bigint)
+	</update>
+	
+	<!-- 의사 목록 조회 -->
+	<select id="rtrvDrList" parameterType="map" resultType="com.duzon.lulu.service.MSC.common.model.Common.DrModel">
+		select
+			cfgwuserm.usr_sqno,
+			cfgdeprtm.dept_hnm,
+			cfgwuserm.user_nm
+		from cfgwuserm, cfgemplem, cfgdeprtm
+		WHERE cfgwuserm.usr_sqno = cfgemplem.usr_sqno
+			and cfgemplem.main_dept_yn = 'Y'
+			and cfgemplem.empl_stat = 2
+			and cfgemplem.octy_cd IN ('D1', 'D2', 'D3')
+			and cfgemplem.empl_vald_yn = 'Y'
+			and cfgdeprtm.dept_sqno = cfgemplem.dept_sqno
+			and cfgdeprtm.del_yn = 'N'
+			and cfgdeprtm.otpt_mdcr_dept_yn = 'Y'
+		order by cfgwuserm.user_nm
+	</select>
+	
+	<!-- 환자 기본정보 조회, author : khgkjg12 강현구A -->
+	<select id="rtrvPtBascInfo" resultType="com.duzon.lulu.service.MSC.common.model.Common.PtBascInfoModel">
+	select
+		pt_nm,
+		nm_dscm_dvcd,
+		sex_cd,
+		TO_CHAR((CASE WHEN (COALESCE(pt_srrn, '') = '' OR COALESCE(pt_frrn, '') = '') THEN NULL
+															  WHEN SUBSTRING(pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', pt_frrn)
+															  WHEN SUBSTRING(pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', pt_frrn)
+															  ELSE CONCAT('20', pt_frrn)
+											END)::date,'yyyymmdd') dobr,
+		mono.fn_get_age(CASE WHEN (COALESCE(pt_srrn, '') = '' OR COALESCE(pt_frrn, '') = '') THEN NULL
+                                         WHEN SUBSTRING(pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', pt_frrn)
+                                         WHEN SUBSTRING(pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', pt_frrn)
+                                         ELSE CONCAT('20', pt_frrn)
+                END, '2') as age
+	from hooptbaim
+	where pid = #{pid}::text
+	</select>
+	
+	<!--  의무기록지 사용자 권한 조회	-->
+	<select id="selectUserAuth" resultType="com.duzon.lulu.service.MSC.common.model.Common.Authority">
+		SELECT mdfr_clsf_sqno, rtrv_auth_yn AS read, rgst_updt_auth_yn AS update, prnt_auth_yn AS print, isue_auth_yn AS issue
+		FROM cfgemrasn
+		WHERE empl_sqno = #{employee_no}
+		  AND del_yn ='N'
+	</select>
+</mapper>

@@ -1,0 +1,387 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.ExternalInterface.Infinitt.mapper.InfinittMapper">
+
+    <select id="getOrderInfoList" resultType="com.duzon.lulu.service.MSC.ExternalInterface.Infinitt.model.OrderInfo">
+        select
+            '' as CHARACTER_SET, -- 언어 설정
+            '' as SCHEDULED_AETITLE, -- 예정장비
+            to_char(med.cndt_dt, 'YYYYMMDDHH24MISS') as SCHEDULED_DTTM, -- 촬영예정일시
+            coalesce((select mdlt_dvcd from medprscdm where prsc_cd = med.prsc_cd), '') as SCHEDULED_MODALITY, -- 예비장비 종류
+            coalesce((select exrm_detl_info from cfgexmrmn where fclt_info_sqno = med.hope_exrm_dept_sqno), '')
+            as SCHEDULED_LOCATION, -- 촬영예정장소
+            med.prsc_cd as SCHEDULED_PROC_ID, -- 촬영번호
+            med.prsc_nm as SCHEDULED_PROC_DESC, -- 촬영설
+            prsc_prgr_stat_cd as SCHEDULED_PROC_STATUS, -- 촬영상태
+            coalesce(med.wrcn_wrtn_yn, 'N') as CONTRAST_AGENT, -- 조영제
+            med.prsc_cd as REQUESTED_PROC_ID, -- 검사번호
+            med.prsc_nm as REQUESTED_PROC_DESC, -- 검사설명
+            med.prsc_cd as REQUESTED_PROC_CODES, -- 검사코드
+            med.prsc_memo as REQUESTED_PROC_COMMENTS, -- 검사 기타정보
+            concat(to_char(med.prsc_date, 'YYYYMMDD'), '-' ,med.prsc_sqno) as STUDY_INSTANCE_UID, -- 검사 고유번호
+            med.prsc_cd as PROC_PLACER_ORDER_NO, -- 검사처방번호
+            med.rcpn_no as PROC_FILLER_ORDER_NO, -- 검사접수번호
+            coalesce(med.pacs_no, 0) as ACCESSION_NO, -- 접수번호(검사식별번호. RIS)
+            userm.user_nm as ATTEND_DOCTOR, -- 담당의
+            '' as PERFORM_DOCTOR, -- 시술의
+            userm.user_nm as CONSULT_DOCTOR, -- 상담의
+            (SELECT user_nm from cfgwuserm WHERE usr_sqno = (select usr_sqno from cfgemplem where empl_sqno = med.prsc_dr_empl_sqno and empl_vald_yn = 'Y')) as REQUEST_DOCTOR, -- 처방의
+            userm.user_nm as REFER_DOCTOR, -- 주치의
+            (SELECT dept_hnm from cfgdeprtm WHERE dept_sqno = (select dept_sqno from cfgemplem where empl_sqno = med.prsc_dr_empl_sqno and empl_vald_yn = 'Y')) as REQUEST_DEPARTMENT, -- 의뢰과(처방을 내린 의사 소속)
+            trc.mdcr_stdt as IMAGING_REQUEST_DTTM, -- 검사처방일시
+            med.prsc_cd as ISR_PLACER_ORDER_NO, -- 검사처방번호
+            med.rcpn_no as ISR_FILLER_ORDER_NO, -- 검사접수번호
+            hbm.pt_nm as PATIENT_NAME, -- 환자이름
+            hbm.pid as PATIENT_ID, -- 환자id
+            concat(hbm.pt_frst_engl_nm, hbm.pt_last_engl_nm) as OTHER_PATIENT_NAME,-- 환자성명(영어)
+            concat(hbm.pt_frrn, '-' ,mono.pgp_sym_decrypt(substring(hbm.pt_srrn, 2,length(hbm.pt_srrn))::bytea,
+                #{cryptKey})) as OTHER_PATIENT_ID, -- pid 주민등록번호
+            TO_CHAR((CASE WHEN (COALESCE(hbm.pt_srrn, '') = '' OR COALESCE(hbm.pt_frrn, '') = '') THEN NULL
+                                  WHEN SUBSTRING(hbm.pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', hbm.pt_frrn)
+                                  WHEN SUBSTRING(hbm.pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', hbm.pt_frrn)
+                                  ELSE CONCAT('20', hbm.pt_frrn)
+                END)::date,'yyyy-mm-dd') as PATIENT_BIRTH_DATE, -- pid 생년월일
+            hbm.sex_cd as PATIENT_SEX, -- pid 성별
+            med.wght as PATIENT_WEIGHT, -- 체중
+            med.hght as PATIENT_SIZE, -- 키
+            '' as PATIENT_STATE, -- 환자 상태
+            hbm.clph_no as TEL_NO, -- 전화번호
+            hbm.cntc_emal as EMAIL, -- 이메일
+            hbm.abo_type_cd as BLOOD_TYPE, -- 혈액형
+            (SELECT dept_hnm from cfgdeprtm WHERE dept_sqno = eml.dept_sqno) as CURRENT_DEPARTMENT, -- 진료과
+            med.mdcr_dr_id as CURRENT_DOCTOR_ID, -- 진료의 id
+<!--            (select user_nm from cfgwuserm where usid= med.mdcr_dr_id) as CURRENT_DOCTOR_NAME, &#45;&#45; 진료의 명-->
+            userm.user_nm as CURRENT_DOCTOR_NAME,
+            coalesce(hbm.prgn_yn, 'N') as PREGNANCY_STATUS, -- 임신여부
+            (SELECT dgns_nm from medptdgnn WHERE rcpn_no = trc.rcpn_no AND dvsn = '1' AND del_yn ='N')
+                as DIAGNOSIS, -- 진단명
+            to_char(med.cndt_dt, 'YYYYMMDDHH24MISS') as REGISTER_DTTM -- 촬영예정일시
+        from
+            (select
+                meddata.*,
+                body.wght , -- 체중
+                body.hght -- 키
+            from
+                (select
+                    med.prsc_cd,
+                    med.prsc_nm,
+                    'NW' as prsc_prgr_stat_cd,
+                    coalesce(med.wrcn_wrtn_yn, 'N') as wrcn_wrtn_yn,
+                    med.hope_exrm_dept_sqno,
+                    coalesce(med.prsc_memo, '') as prsc_memo,
+                    med.rcpn_no,
+                    med.prsc_dr_empl_sqno,
+                    med.mdcr_dr_empl_sqno,
+                    med.pid,
+                    med.cndt_dt,
+                    med.mdcr_dr_id,
+                    med.prsc_date,
+                    med.prsc_sqno,
+                    med.pacs_no
+                from meddttpsn med
+                where med.prsc_clsf_cd = 'C2'
+                    and med.dc_yn = 'N'
+                    and coalesce(med.mdcr_cncl_yn,'N') = 'N'
+                    and med.prsc_prgr_stat_cd = 'E'
+                    and med.pacs_no is not null
+                    and coalesce(med.pacs_rcpn_yn, 'N') = 'N'
+                    and med.hope_exrm_dept_sqno is not null
+                    and med.pacs_co_cd = #{co_code}
+            union all
+                select
+                    med.prsc_cd,
+                    med.prsc_nm,
+                    'CA' as prsc_prgr_stat_cd,
+                    coalesce(med.wrcn_wrtn_yn, 'N') as wrcn_wrtn_yn,
+                    med.hope_exrm_dept_sqno,
+                    coalesce(med.prsc_memo, '') as prsc_memo,
+                    med.rcpn_no,
+                    med.prsc_dr_empl_sqno,
+                    med.mdcr_dr_empl_sqno,
+                    med.pid,
+                    med.cndt_dt,
+                    med.mdcr_dr_id,
+                    med.prsc_date,
+                    med.prsc_sqno,
+                    med.pacs_no
+                from meddttpsn med
+                where med.prsc_clsf_cd = 'C2'
+                    and med.dc_yn = 'N'
+                    and coalesce(med.mdcr_cncl_yn,'N') = 'N'
+                    and med.prsc_prgr_stat_cd in ('B', 'C')
+                    and med.pacs_no is not null
+                    and med.pacs_rcpn_yn = 'Y'
+                    and med.hope_exrm_dept_sqno is not null
+                    and med.pacs_co_cd = #{co_code}) as meddata
+                left join medbdyasn body
+                    on meddata.pid = body.pid
+                        and body.body_asss_sqno = (select max(body_asss_sqno) from medbdyasn where pid = meddata.pid)
+            ) as med
+            , hoootrcin trc
+            , hooptbaim hbm
+            , cfgemplem eml
+            , cfgwuserm userm
+        where trc.rcpn_no = med.rcpn_no and trc.hstr_stat_cd = 'Y'
+            and hbm.pid = med.pid
+            and eml.empl_sqno = med.mdcr_dr_empl_sqno and eml.del_yn = 'N' and eml.empl_vald_yn = 'Y'
+            and userm.usr_sqno = eml.usr_sqno
+            and userm.del_yn = 'N'
+    </select>
+
+    <select id="getUserInfoList" resultType="com.duzon.lulu.service.MSC.ExternalInterface.Infinitt.model.UserInfo">
+        select
+            wuserm.usid as USER_ID -- 사용자 아이디
+        ,   wuserm.user_nm as USER_NAME   -- 성명
+        ,   concat(wuserm.usid, '!@') as PASSWORD
+        ,   (CASE
+                WHEN emplem.octy_cd in ('D1', 'D2', 'D3') THEN 'doctor'
+                ELSE 'employee'
+            END) as USER_LEVEL   -- 권한
+        ,   pcsifd.itcn_yn as USER_STATUS   -- 연동상태
+        ,   pcsifd.rmrk as COMMENTS    -- 비고
+        FROM cmmpcsifd pcsifd
+        LEFT JOIN cfgemplem emplem
+            ON pcsifd.empl_sqno = emplem.empl_sqno AND emplem.empl_vald_yn = 'Y'
+        LEFT JOIN cfgwuserm wuserm
+            ON emplem.usr_sqno = wuserm.usr_sqno
+        where pacs_cd = #{co_code}
+    </select>
+
+    <select id="getStudyInfo" resultType="com.duzon.lulu.service.MSC.ExternalInterface.Infinitt.model.StudyInfo">
+        select
+            concat(to_char(med.prsc_date, 'YYYYMMDD'),med.prsc_sqno) as STUDY_KEY,
+            med.pid as PATIENT_ID,
+            coalesce(med.pacs_no, 0) as ACCESSION_NO,
+            med.prsc_prgr_stat_cd as STUDY_STAT,
+            concat(to_char(med.prsc_date, 'YYYYMMDD'), '-' ,med.prsc_sqno) as STUDY_INSTANCE_UID,
+            to_char(med.cndt_dt, 'YYYYMMDDHH24MISS') as STUDY_DTTM,
+            med.prsc_nm as REQUEST_NAME, -- 검사설명
+            med.prsc_cd as REQUEST_CODE, -- 검사코드
+            coalesce((select mdlt_dvcd from medprscdm where prsc_cd = med.prsc_cd), '') as PERFORM_MODALITY,
+            '' as PERFORM_STATION,
+            '' as SOURCE_AETITLE,
+            coalesce((select exrm_detl_info from cfgexmrmn where fclt_info_sqno = med.hope_exrm_dept_sqno), '')
+                as SCHEDULED_LOCATION,
+            (SELECT dept_hnm from cfgdeprtm
+                WHERE dept_sqno = (select dept_sqno from cfgemplem where empl_sqno = med.cndt_prsn_empl_sqno and empl_vald_yn = 'Y')) as PERFORM_DEPARTMENT,
+            to_char(med.cndt_dt, 'YYYYMMDDHH24MISS') as SCHEDULED_DTTM,
+            '' as PATIENT_LOCATION,
+            to_char(med.prsc_inpt_dt, 'YYYYMMDDHH24MISS') as REQUEST_DTTM,
+            '' as ADMISSION_ID,
+            (SELECT user_nm from cfgwuserm WHERE usr_sqno = (select usr_sqno from cfgemplem where empl_sqno = med.prsc_dr_empl_sqno and empl_vald_yn = 'Y')) as REQUEST_DOCTOR
+        from meddttpsn med
+            where prsc_prgr_stat_cd >= 'E' and pacs_rcpn_yn = 'Y' and pacs_co_cd = #{co_code}
+    </select>
+
+    <!--  알림톡 전송 데이터 조회  -->
+    <select id="selectNotiData" resultType="java.util.HashMap">
+        SELECT a.prsc_cd, a.prsc_nm, to_char(a.cndt_dt, 'YYYY-MM-DD') as date, p.pt_nm
+        , (SELECT usr_sqno
+        FROM cfgwuserm
+        WHERE usid = (SELECT mdcr_dr_id FROM hoootrcin WHERE rcpn_no = a.rcpn_no AND hstr_stat_cd = 'Y')
+        LIMIT 1) AS mdcr_dr_id,
+        a.prsc_dr_empl_sqno as prsc_dr_sqno
+        FROM meddttpsn a, hooptbaim p
+        WHERE a.pid = #{pid}
+        AND a.prsc_date = #{prsc_date}::date
+        AND a.prsc_sqno = #{prsc_sqno}
+        AND a.dc_yn = 'N'
+        AND p.pid = a.pid
+    </select>
+
+    <!-- 해당검사의 진료결과 존재여부 확인 -->
+    <select id="selectExmnRsltSqno" resultType="int">
+        SELECT exmn_rslt_sqno
+        FROM mscemnrsn
+        WHERE pid = #{pid}
+        AND prsc_date = #{prsc_date}::date
+        AND prsc_sqno = #{prsc_sqno}
+        AND prsc_clsf_cd = 'C2'
+    </select>
+
+    <update id="updateOrderInfo" parameterType="com.duzon.lulu.service.MSC.ExternalInterface.Infinitt.model.LogOrderInfo">
+        <foreach collection="list" item="info" index="index" open="" separator=";" close="">
+            UPDATE
+                meddttpsn
+            SET
+            <choose>
+                <when test='info.SCHEDULED_PROC_STATUS.equals("NW") and info.STATUS.equals("Y")'>pacs_rcpn_yn = 'Y'</when>
+                <otherwise>pacs_rcpn_yn = 'N'</otherwise>
+            </choose>
+
+            WHERE pid = #{info.patient_id}
+                and prsc_date = #{info.prsc_date}::date
+                and prsc_sqno = #{info.prsc_sqno}::numeric
+                and pacs_co_cd = #{info.co_code}
+                and pacs_no = #{info.ACCESSION_NO}::numeric
+        </foreach>
+    </update>
+
+    <!-- 영상알림 연동 -->
+    <update id="updateSave" useGeneratedKeys="true" keyColumn="pid,prsc_date,prsc_sqno" keyProperty="pid,prsc_date,prsc_sqno">
+        <selectKey keyProperty="prsc_prgr_stat_cd" keyColumn="prsc_prgr_stat_cd" order="BEFORE" resultType="String">
+            SELECT prsc_prgr_stat_cd
+            FROM meddttpsn
+            WHERE pacs_no = #{accession_no}::numeric
+            AND pacs_co_cd = #{co_code}
+        </selectKey>
+        UPDATE meddttpsn
+        SET last_updt_usid = #{co_code}
+            , last_updt_dt = now()
+            , prsc_prgr_stat_cd = 'M'
+            , iptn_dt = to_char(to_timestamp(#{study_dttm}, 'YYYYMMDDHH24MISS'), 'YYYY-MM-DD HH24:MI:SS.MS')::timestamp
+        WHERE pacs_no = #{accession_no}::numeric
+            AND pacs_co_cd = #{co_code}
+            AND dc_yn = 'N'
+    </update>
+
+    <update id="updateInterpret" useGeneratedKeys="true" keyColumn="pid,prsc_date,prsc_sqno,exmn_hope_date" keyProperty="pid,prsc_date,prsc_sqno,exmn_hope_date">
+
+        <selectKey keyProperty="stat_cd" keyColumn="prsc_prgr_stat_cd" order="BEFORE" resultType="String">
+            SELECT prsc_prgr_stat_cd
+            FROM meddttpsn
+            WHERE pacs_no = #{accession_no}::numeric
+            AND pacs_co_cd = #{co_code}
+        </selectKey>
+        UPDATE meddttpsn
+        SET last_updt_usid = #{co_code}
+            , last_updt_dt = now()
+            , prsc_prgr_stat_cd = #{prsc_prgr_stat_cd}
+            , rptr_id = #{author_name}
+            , rptg_dt = to_char(to_timestamp(#{document_dttm}, 'YYYYMMDDHH24MISS'), 'YYYY-MM-DD HH24:MI:SS.MS')::timestamp
+        WHERE pacs_no = #{accession_no}::numeric
+            AND pacs_co_cd = #{co_code}
+            AND dc_yn = 'N'
+    </update>
+
+    <insert id="updateConduct" useGeneratedKeys="true" keyColumn="pid,prsc_date,prsc_sqno" keyProperty="pid,prsc_date,prsc_sqno">
+        UPDATE msrexmrsn
+        SET last_updt_usid = #{co_code}
+            , last_updt_dt = now()
+            , del_yn = 'N'
+        <choose>
+            <when test='type != null and type.equals("Interpret")'>
+                , rptg_usid = #{author_name}            -- 보고사용자
+                , rptg_dt = to_char(to_timestamp(#{document_dttm}, 'YYYYMMDDHH24MISS'), 'YYYY-MM-DD HH24:MI:SS.MS')::timestamp   -- 보고일시
+                , iptn_rslt = #{finding}     -- 판독결과
+            </when>
+            <otherwise>
+                , iptn_dt = to_char(to_timestamp(#{study_dttm}, 'YYYYMMDDHH24MISS'), 'YYYY-MM-DD HH24:MI:SS.MS')::timestamp-- 판독일시
+                , iptn_dr_usid = #{co_code}
+            </otherwise>
+        </choose>
+        WHERE pacs_no = #{accession_no}::numeric
+          AND pacs_co_cd = #{co_code}
+    </insert>
+
+    <!--  영상검사결과 이력 insert  -->
+    <insert id="insertHistory">
+        INSERT INTO msrexmrsh
+        (pid
+        , prsc_date
+        , prsc_sqno
+        , frst_rgst_usid
+        , last_updt_usid
+        , del_yn
+        , cndt_usid
+        , cndt_dt
+        , iptn_dr_usid
+        , iptn_dt
+        , rptg_usid
+        , rptg_dt
+        , iptn_rslt
+        , pacs_link_path
+        , pacs_co_cd
+        , exmn_pclr_matr
+        , exmn_eqpm_cd
+        , rcpn_no
+        , prsc_cd
+        , prsc_clsf_cd
+        , slip_cd
+        , pacs_no
+        , hstr_stat_cd
+        )
+        SELECT
+        pid
+        , prsc_date
+        , prsc_sqno
+        , pacs_co_cd
+        , pacs_co_cd
+        , del_yn
+        , cndt_usid
+        , cndt_dt
+        , iptn_dr_usid
+        , iptn_dt
+        , #{author_name}
+        , to_char(to_timestamp(#{document_dttm}, 'YYYYMMDDHH24MISS'), 'YYYY-MM-DD HH24:MI:SS.MS')::timestamp
+        , iptn_rslt
+        , pacs_link_path
+        , pacs_co_cd
+        , exmn_pclr_matr
+        , exmn_eqpm_cd
+        , rcpn_no
+        , prsc_cd
+        , prsc_clsf_cd
+        , slip_cd
+        , pacs_no
+        , #{hstr_stat_cd}
+        FROM msrexmrsn
+        WHERE pacs_no = #{accession_no}::numeric
+        AND pacs_co_cd = #{co_code}
+    </insert>
+
+    <!-- 진료지원 검사결과 insert -->
+    <insert id="insertResult">
+        INSERT INTO mscemnrsn
+            (
+            frst_rgst_usid,    -- 최초등록사용id
+            last_updt_usid,    -- 최종수정사용자id
+            <if test='exmnRsltSqno != null'>
+                exmn_rslt_sqno,    -- 검사결과일련번호
+            </if>
+            pid,               -- 환자등록번호
+            prsc_date,         -- 처방일자
+            prsc_sqno,         -- 처방순번
+            prsc_clsf_cd,      -- 처방분류코드(CR1001)
+            slip_cd,           -- slip 코드
+            exmn_cd,           -- 검사코드
+            cndt_usid,      -- 실시자 id
+            cndt_dt,           -- 실시일시
+            rptg_dt,         -- 보고일자
+            rslt_type_dvsn,     -- 결과타입구분
+            exmn_rslt_2,        -- 검사결과2(TEXT)
+            rcpn_no,         -- 접수일련번호(원무외래접수일련번호)
+            pacs_co_cd            -- pacs 업체 코드
+            , prsc_prgr_stat_cd
+            )
+        SELECT
+            pacs_co_cd
+            , pacs_co_cd
+            <if test='exmnRsltSqno != null'>
+            , #{exmnRsltSqno}::int4
+            </if>
+            , pid
+            , prsc_date
+            , prsc_sqno
+            , prsc_clsf_cd
+            , slip_cd
+            , prsc_cd
+            , cndt_usid
+            , cndt_dt
+            , rptg_dt
+            , 'T'
+            , iptn_rslt
+            , rcpn_no
+            , pacs_co_cd
+            , 'O'
+        FROM msrexmrsn
+        WHERE pacs_no = #{accession_no}::numeric
+        AND pacs_co_cd = #{co_code}
+        ON CONFLICT (exmn_rslt_sqno) DO UPDATE SET
+        last_updt_usid = #{co_code}
+        , last_updt_dt = now()
+        , exmn_rslt_2 = #{finding}     -- 판독결과
+        , rptg_dt = to_char(to_timestamp(#{document_dttm}, 'YYYYMMDDHH24MISS'), 'YYYY-MM-DD HH24:MI:SS.MS')::timestamp
+    </insert>
+</mapper>

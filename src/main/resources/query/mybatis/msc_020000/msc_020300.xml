@@ -1,0 +1,749 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.duzon.lulu.service.MSC.MSC_020000.mapper.MSC_020300Mapper">
+
+	<sql id="fromMslexmrsnMslentrfn">
+    FROM mslexmrsn 
+    LEFT JOIN
+    (
+                    SELECT DISTINCT ON ( spcm_no, exmn_cd )
+                                    spcm_no,
+                                    exmn_cd,
+                                    ents_exmn_inst_cd,
+                                    spcm_ents_prgr_stat_cd,
+                                    spcm_ents_trms_dt,
+                                    spcm_ents_rply_dt,
+                                    spcm_ents_trms_usid
+                    FROM            mslentrfn
+                    ORDER BY        spcm_no DESC,
+                                    exmn_cd DESC,
+                                    spcm_ents_sqno DESC,
+                                    spcm_ents_prgr_stat_cd ) mslentrfn 
+    ON mslentrfn.spcm_no = mslexmrsn.spcm_no
+    AND mslentrfn.exmn_cd = mslexmrsn.exmn_cd
+	</sql>
+	
+	<!-- 진단검사 결과, 결과현황, MST그리드 조회.
+	* 작성자 : 강현구
+	* 최종 수정일 : 2024-03-15 -->
+	<select id="rtrvRsltSttsList" parameterType="Map" resultType="com.duzon.lulu.service.MSC.MSC_020000.model.RsltSttsModel">
+    SELECT t.pid,                                                          -- 환자번호.
+           t.cndt_dy,                                                      -- 시행일.
+           t.hope_exrm_dept_sqno,                                          -- 검사실 부서 일련.
+           t.prsc_prgr_stat_cd,                                            -- 처방상태코드.
+           t.mdcr_date,                                                    -- 외래 진료일시.
+           t.rcpn_no,                                                      -- 외래 접수 번호.
+           t4.pt_nm,                                                       -- 환자 성명.
+           t4.nm_dscm_dvcd,                                                -- 환자 성명 구별자.
+           t.mdcr_dr_user_nm,                                              -- 외래 진료의 이름.
+           t.mdcr_dr_sign_lctn,                                            -- 외래 진료의 서명.
+           t5.emrg_pt_yn,                                                  -- 응급환자 여부.
+           t4.use_yn AS pt_use_yn,                                         -- 통합환자 여부.
+           CONCAT(
+           (
+                  SELECT cmcd_smmr_nm
+                  FROM   mono.icmcomcld
+                  WHERE  cmcd_clsf_cd = 'CZ1001'
+                  AND    cmcd_cd = t4.sex_cd) , (
+           CASE
+                  WHEN t4.undn_yn = 'Y'
+                  AND    t4.sex_cd != 'O' THEN '/미상'
+                  WHEN t4.undn_yn = 'N' THEN CONCAT('/', mono.fn_get_age(
+                         CASE
+                                WHEN COALESCE(t4.pt_srrn, '') = ''
+                                OR     COALESCE(t4.pt_frrn, '') = '' THEN to_char(CURRENT_DATE, 'YYYYMMDD')
+                                WHEN Substring(t4.pt_srrn, 1, 1) = '1'
+                                OR     Substring(t4.pt_srrn, 1, 1) = '2'
+                                OR     Substring(t4.pt_srrn, 1, 1) = '5'
+                                OR     Substring(t4.pt_srrn, 1, 1) = '6' THEN CONCAT('19', t4.pt_frrn)
+                                WHEN Substring(t4.pt_srrn, 1, 1) = '9'
+                                OR     Substring(t4.pt_srrn, 1, 1) = '0' THEN CONCAT('18',t4. pt_frrn)
+                                ELSE CONCAT('20', t4.pt_frrn)
+                         END, '5'))
+                  ELSE ''
+           END) ) AS sex_age, -- 성별나이 표시.
+           t.spcm_no_set      -- 해당 검체 세트.
+    FROM   ( SELECT t1.pid ,                               -- 처방 환자번호.
+                    t1.rcpn_no ,                           -- 처방 외래접수 번호.
+                    t3.sign_lctn      AS mdcr_dr_sign_lctn,-- 외래 진료의 서명.
+                    t3.user_nm        AS mdcr_dr_user_nm , -- 외래 진료의 명.
+                    MIN(t2.mdcr_date) AS mdcr_date ,       -- 외래 진료일
+                    t1.exmn_date      AS cndt_dy ,         -- 처방 시행일.
+                    meddttpsn.hope_exrm_dept_sqno ,               -- 검사실 부서일련.
+                    MIN(t1.prsc_prgr_stat_cd) AS prsc_prgr_stat_cd,-- 처방 진행 상태 코드
+                    STRING_AGG(DISTINCT t1.spcm_no, ',') AS spcm_no_set
+             FROM mslspcprn t1 
+             JOIN meddttpsn meddttpsn
+             ON  meddttpsn.pid = t1.pid
+             AND meddttpsn.prsc_date = t1.prsc_date
+             AND meddttpsn.prsc_sqno = t1.prsc_sqno
+             AND t1.prsc_prgr_stat_cd >= 'E'
+             <if test='pid!=NULL and !pid.equals("")'>
+             AND t1.pid = #{pid}::text 
+             </if>
+             AND meddttpsn.hope_exrm_dept_sqno IN (
+             <choose> 
+                 <when test="hope_exrm_dept_sqno_list!=NULL and hope_exrm_dept_sqno_list.size > 0">
+                     <foreach collection="hope_exrm_dept_sqno_list" item="hope_exrm_dept_sqno" separator=",">
+                         #{hope_exrm_dept_sqno}::int8 
+                     </foreach>
+                 </when>
+                 <otherwise> -1 </otherwise>
+             </choose> )
+             AND t1.exmn_date BETWEEN #{cndt_dy_from}::date AND  #{cndt_dy_to}::date
+             JOIN hoootrcin t2 
+             ON   t2.rcpn_no = t1.rcpn_no
+             AND  hstr_stat_cd = 'Y'
+             JOIN cfgwuserm t3 
+             ON t3.usid = t2.mdcr_dr_id
+             GROUP BY t1.rcpn_no,
+                      t1.pid,
+                      t2.mdcr_dr_id,
+                      t3.usr_sqno,
+                      t1.exmn_date,
+                      meddttpsn.hope_exrm_dept_sqno ) t 
+    JOIN hooptbaim t4 
+    ON t.pid = t4.pid 
+    LEFT JOIN medemgstn t5 
+    ON t5.rcpn_no = t.rcpn_no
+    AND t5.emrg_pt_yn = 'Y' 
+    ORDER BY t5.emrg_pt_yn,
+             t5.emrg_pt_stup_dt,
+             t.prsc_prgr_stat_cd,
+             t.cndt_dy DESC,
+             t.pid
+	</select>
+	
+    <!-- 검사결과 목록 조회
+    * 작성사 : 강현구
+    * 최종 수정일 : 2024-03-15 -->
+    <select id="rtrvExmnRsltList" parameterType="List" resultType="com.duzon.lulu.service.MSC.MSC_020000.model.ExmnRsltModel">
+    SELECT mslexmrsn.spcm_no,                             -- 검체 번호.
+           mslexmrsn.exmn_cd,                             -- 검사코드.
+           medprscdm.prsc_nm,                             -- 처방명.
+           mscspccdm.spcm_labl_nm,                        -- 검체코드 라벨.
+           mslexmrsn.pid,                                 -- 환자번호.
+           mslexmrsn.exmn_date,                           -- 검사 일.
+           mslexmcdm.exmn_rslt_tycd AS rslt_type_dvsn,                      -- 결과 타입.
+           mslexmrsn.exmn_rslt_valu,                      -- 결과 값.
+           mslexmrsn.txt_rslt_valu,                       -- 텍스트 결과 값.
+           mslexmrsn.rfvl_lwlm_valu,                      -- 참고치 하한.
+           mslexmrsn.rfvl_uplm_valu,                      -- 참고치 상한.
+           mslexmrsn.rslt_unit_dvsn,                      -- 결과 단위.
+           mslentrfn.spcm_ents_prgr_stat_cd,              -- 위탁진행상태 코드.
+           CASE
+                  WHEN mslentrfn.spcm_ents_prgr_stat_cd IS NULL THEN 'N'
+                  ELSE 'Y'
+           END                     AS entd_exmn_yn,       --위탁 여부.
+           mslexmrsn.rptg_dt::date AS rptg_dy,            -- 보고 일자.
+           mslexmrsn.rslt_prgr_stat_cd,                   -- 결과 진행상태 코드.
+           cfgwuserm.user_nm                                        AS exmn_pich_nm,
+           to_char(mslexmrsn.rslt_rgst_dt, 'YYYY-MM-DD HH24:MI:SS') AS rslt_rgst_dt,
+           CASE 
+                 WHEN icmcomcld.cmcd_slct_yn1 = 'Y' THEN icmcomcld.cmcd_figr_valu1
+                 ELSE -1
+           END AS inpr_nodg,
+           CASE 
+                 WHEN icmcomcld.cmcd_slct_yn2 = 'Y' THEN icmcomcld.cmcd_figr_valu2
+                 ELSE -1
+           END AS dcpr_nodg,
+           CASE
+                 WHEN icmcomcld.cmcd_slct_yn3 = 'Y' THEN icmcomcld.cmcd_figr_valu3
+                 ELSE -1
+           END AS nodg,
+           COALESCE(mslexmrsn.rfvl_lwlm_rang_type_cd, 'B') AS rfvl_lwlm_rang_type_cd,
+           COALESCE(mslexmrsn.rfvl_uplm_rang_type_cd, 'M') AS rfvl_uplm_rang_type_cd,
+           mslexmrsn.exmn_item_rmrk_cnts
+    FROM   mslspcprn
+    JOIN   mslexmrsn
+    ON     mslspcprn.spcm_no IN
+           <foreach collection="list" item="spcm_no" open="(" separator="," close=")">
+           #{spcm_no}::text
+           </foreach>
+    AND    mslspcprn.spcm_no = mslexmrsn.spcm_no 
+    JOIN   mscspccdm 
+    ON     mscspccdm.spcm_cd = mslspcprn.spcm_cd
+    JOIN   medprscdm 
+    ON     medprscdm.prsc_cd = mslexmrsn.exmn_cd 
+    LEFT JOIN
+    (
+                SELECT DISTINCT ON ( spcm_no, exmn_cd) spcm_no,
+                                exmn_cd,
+                                spcm_ents_prgr_stat_cd,
+                                spcm_ents_trms_dt,
+                                spcm_ents_rply_dt
+                FROM            mslentrfn
+                ORDER BY        spcm_no DESC,
+                                exmn_cd DESC,
+                                spcm_ents_sqno DESC,
+                                spcm_ents_prgr_stat_cd ) mslentrfn 
+    ON        mslentrfn.spcm_no = mslspcprn.spcm_no
+    AND       mslentrfn.exmn_cd = mslexmrsn.exmn_cd 
+    LEFT JOIN mslexmcdm
+    ON        mslexmcdm.exmn_cd = medprscdm.prsc_cd
+    LEFT JOIN mono.icmcomcld
+    ON        icmcomcld.cmcd_clsf_cd = 'CS1004'
+    AND       icmcomcld.cmcd_cd = mslexmrsn.dcpr_nodg
+    LEFT JOIN cfgwuserm 
+    ON        cfgwuserm.usid = mslspcprn.cndt_usid
+    ORDER BY    mslexmrsn.rslt_prgr_stat_cd, mslexmrsn.spcm_no, mslexmrsn.mark_seq
+    </select>
+    
+    <!-- 
+    * 검사결과이력 생성 저장 컬럼.
+    * 작성자 : 강현구
+    * 최종 수정일 : 2024-03-15 -->
+    <sql id="crtnRsltHstrSub1">
+    spcm_no,
+    exmn_cd,
+    pid,
+    hold_resn_cd,
+    hold_rgst_dt,
+    hold_rgst_usid,
+    mark_seq,
+    exmn_eqpm_cd,
+    rslt_updt_yn,
+    sms_trms_yn,
+    rptg_dt,
+    rptg_usid,
+    img_rslt_yn,
+    rslt_type_dvsn,
+    exmn_rslt_valu,
+    txt_rslt_valu,
+    rslt_prgr_stat_cd,
+    rfvl_lwlm_valu,
+    rfvl_uplm_valu,
+    rslt_unit_dvsn,
+    rslt_rgst_dt,
+    rslt_rgst_usid,
+    rcpn_no,
+    dgsg_no,
+    exmn_date,
+    exmn_item_rmrk_cnts,
+    exmn_eqpm_rmrk_cnts,
+    slip_cd,
+    dcpr_nodg,
+    rfvl_lwlm_rang_type_cd,
+    rfvl_uplm_rang_type_cd,
+    cvr_lwlm_valu,
+    cvr_uplm_valu,
+    cvr_lwlm_rang_type_cd,
+    cvr_uplm_rang_type_cd
+    </sql>
+    
+    <!-- 
+    * 검사결과이력 생성 조건절.
+    * 작성자 : 강현구
+    * 최종 수정일 : 2024-03-15 -->
+    <sql id="crtnRsltHstrSub2">
+    ( spcm_no, exmn_cd ) IN
+    <foreach collection="param[0]" item="rslt" open="(" separator="," close=")">
+    ( #{rslt.spcm_no}::text, #{rslt.exmn_cd}::text )
+    </foreach>
+    </sql>
+    
+    <!-- 
+    * 검사결과이력 생성
+    * 작성자 : 강현구
+    * 최종 수정일 : 2024-03-13 -->
+    <insert id="crtnRsltHstr" parameterType="com.duzon.lulu.service.MSC.util.MSLC.MSLCParamModel">
+    INSERT INTO mslexmrsh 
+                ( <include refid="crtnRsltHstrSub1"/>,
+                frst_rgst_usid,
+                last_updt_usid,
+                hstr_stat_cd,
+                del_yn )
+    SELECT      to_update.*,
+                #{session.portal_id} AS frst_rgst_usid,
+                #{session.portal_id} AS last_updt_usid,
+                (
+                    CASE 
+                         WHEN last_hstr.rslt_prgr_stat_cd = 'E' AND to_update.rslt_prgr_stat_cd = 'M' THEN '1'
+                         WHEN last_hstr.rslt_prgr_stat_cd = 'M' AND to_update.rslt_prgr_stat_cd = 'E' THEN '3'
+                         WHEN last_hstr.rslt_prgr_stat_cd = 'M' AND to_update.rslt_prgr_stat_cd = 'M'
+                         AND 
+                         (
+                             COALESCE(last_hstr.exmn_rslt_valu,'') != COALESCE(to_update.exmn_rslt_valu,'')
+                             OR COALESCE(last_hstr.txt_rslt_valu,'') != COALESCE(to_update.txt_rslt_valu,'') ) THEN '2'
+                         ELSE NULL
+                    END ) AS hstr_stat_cd,
+                    'N'   AS del_yn
+    FROM        ( SELECT  <include refid="crtnRsltHstrSub1"/>
+                  FROM    mslexmrsn
+                  WHERE   <include refid="crtnRsltHstrSub2"/> ) to_update
+    LEFT JOIN   ( 
+                  SELECT   DISTINCT ON 
+                           (   spcm_no,
+                               exmn_cd )
+                           spcm_no, 
+                           exmn_cd,
+                           exmn_rslt_valu,
+                           txt_rslt_valu,
+                           rslt_prgr_stat_cd
+                  FROM     mslexmrsh
+                  WHERE    <include refid="crtnRsltHstrSub2"/>
+                  ORDER BY spcm_no, exmn_cd, hstr_sqno DESC ) last_hstr
+    ON   to_update.spcm_no = last_hstr.spcm_no
+    AND  to_update.exmn_cd = last_hstr.exmn_cd
+    </insert>
+    
+    
+    
+   	<!-- 검사취소, 저장, 판독취소, 최종보고에서 검증용으로 사용.
+   	* SPCM LOCK + RSLT + ENTS
+   	* 작성자 : 강현구
+   	* 최종 수정일 : 2024-03-15	 -->
+	<select id="lockSpcmWithEntsRslt" parameterType="Collection" resultType="com.duzon.lulu.service.MSC.MSC_020000.model.LockSpcmWithEntsRsltModel">
+    SELECT  mslspcprn.spcm_no,
+            mslexmrsn.exmn_cd,
+            mslexmrsn.rslt_prgr_stat_cd,
+            mslentrfn.spcm_ents_prgr_stat_cd,
+            mslexmrsn.exmn_rslt_valu,
+            mslexmrsn.txt_rslt_valu,
+            mslexmrsn.exmn_item_rmrk_cnts,
+            mslentrfn.ents_exmn_inst_cd,
+            mslentrfn.spcm_ents_trms_usid,
+            mslentrfn.spcm_ents_trms_dt,
+            mslexmrsn.rslt_type_dvsn AS exmn_rslt_tycd,
+            CASE 
+                  WHEN icmcomcld.cmcd_slct_yn1 = 'Y' THEN icmcomcld.cmcd_figr_valu1
+                  ELSE -1
+            END AS inpr_nodg,
+            CASE 
+                  WHEN icmcomcld.cmcd_slct_yn2 = 'Y' THEN icmcomcld.cmcd_figr_valu2
+                  ELSE -1
+            END AS dcpr_nodg,
+            CASE
+                  WHEN icmcomcld.cmcd_slct_yn3 = 'Y' THEN icmcomcld.cmcd_figr_valu3
+                  ELSE -1
+            END AS nodg,
+            mslexmrsn.rslt_unit_dvsn AS rslt_unit_nm,
+            mslexmrsn.rfvl_lwlm_valu,
+            mslexmrsn.rfvl_uplm_valu,
+            mslexmrsn.rfvl_lwlm_rang_type_cd,
+            mslexmrsn.rfvl_uplm_rang_type_cd,
+            hooptbaim.sex_cd,
+            EXTRACT(YEAR FROM AGE(CURRENT_DATE, (CASE WHEN (COALESCE(hooptbaim.pt_srrn, '') = '' OR COALESCE(hooptbaim.pt_frrn, '') = '') THEN NULL
+                                  WHEN SUBSTRING(hooptbaim.pt_srrn, 1, 1) IN ('1', '2', '5', '6') THEN CONCAT('19', hooptbaim.pt_frrn)
+                                  WHEN SUBSTRING(hooptbaim.pt_srrn, 1, 1) IN ('9', '0') THEN CONCAT('18', hooptbaim.pt_frrn)
+                                  ELSE CONCAT('20', hooptbaim.pt_frrn)
+                END)::date)) AS age
+    <include refid="fromMslexmrsnMslentrfn"/>
+    JOIN    hooptbaim
+    ON      hooptbaim.pid = mslexmrsn.pid
+    JOIN    mslspcprn
+    ON      mslspcprn.spcm_no = mslexmrsn.spcm_no
+    AND     mslspcprn.spcm_no IN
+            <foreach collection="collection" item="spcm" open="(" separator="," close=")">
+            #{spcm.spcm_no}::text
+            </foreach>
+    LEFT JOIN mono.icmcomcld
+    ON        icmcomcld.cmcd_clsf_cd = 'CS1004'
+    AND       icmcomcld.cmcd_cd = mslexmrsn.dcpr_nodg -- 이름은 소수부 자릿수 지만 실제로 정수부를 포함
+    FOR UPDATE OF mslspcprn
+	</select>
+	
+	
+   	<!-- 검사취소, 저장, 판독취소, 최종보고에서 검증용으로 사용.
+   	* SPCM LOCK + RSLT
+   	* 작성자 : 강현구
+   	* 최종 수정일 : 2024-03-15	 -->
+	<select id="lockSpcmWithRslt" parameterType="Collection" resultType="com.duzon.lulu.service.MSC.MSC_020000.model.LockSpcmWithRsltModel">
+    SELECT  mslspcprn.spcm_no,
+            mslexmrsn.exmn_cd,
+            mslexmrsn.rslt_prgr_stat_cd
+    FROM    mslexmrsn
+    JOIN    mslspcprn
+    ON      mslspcprn.spcm_no = mslexmrsn.spcm_no
+    AND     mslspcprn.spcm_no IN
+            <foreach collection="collection" item="spcm" open="(" separator="," close=")">
+            #{spcm.spcm_no}::text
+            </foreach>
+    FOR UPDATE OF mslspcprn
+	</select>
+	
+    
+    
+    <!-- 검사 결과 중간보고 -->
+    <update id="iptnRslt" parameterType="com.duzon.lulu.service.MSC.util.MSLC.MSLCParamModel">
+    UPDATE  mslexmrsn
+    SET     exmn_rslt_valu = #{param[0].exmn_rslt_valu}::text,
+            txt_rslt_valu = #{param[0].txt_rslt_valu}::text,
+            rfvl_uplm_valu = #{param[0].rfvl_uplm_valu}::text,
+            rfvl_lwlm_valu = #{param[0].rfvl_lwlm_valu}::text,
+            rslt_unit_dvsn = #{param[0].rslt_unit_nm}::text,
+            rfvl_uplm_rang_type_cd = #{param[0].rfvl_uplm_rang_type_cd}::text,
+            rfvl_lwlm_rang_type_cd = #{param[0].rfvl_lwlm_rang_type_cd}::text,
+            rslt_prgr_stat_cd = 'M',
+            rslt_rgst_dt = CURRENT_TIMESTAMP,
+            rslt_rgst_usid = #{session.portal_id},
+            last_updt_dt = CURRENT_TIMESTAMP,
+            last_updt_usid = #{session.portal_id},
+            exmn_item_rmrk_cnts = #{param[0].exmn_item_rmrk_cnts}::text,
+            dgsg_no = #{param[0].dgsg_no},
+            exmn_eqpm_cd = #{param[0].exmn_eqpm_cd},
+            exmn_eqpm_rmrk_cnts = #{param[0].exmn_eqpm_rmrk_cnts}
+    WHERE   mslexmrsn.spcm_no = #{param[0].spcm_no}::text
+    AND     mslexmrsn.exmn_cd = #{param[0].exmn_cd}::text
+    </update>
+    
+    <update id="syncSpcm" parameterType="com.duzon.lulu.service.MSC.util.MSLC.MSLCParamModel">
+    UPDATE mslspcprn
+    SET    last_updt_dt = CURRENT_TIMESTAMP,
+           last_updt_usid = #{session.portal_id},
+           prsc_prgr_stat_cd = result.rslt_prgr_stat_cd,
+           rptg_dt =
+           CASE
+                  WHEN mslspcprn.prsc_prgr_stat_cd = 'M'
+                  AND    result.rslt_prgr_stat_cd = 'N' THEN CURRENT_TIMESTAMP
+                  WHEN mslspcprn.prsc_prgr_stat_cd = 'N'
+                  AND    result.rslt_prgr_stat_cd = 'M' THEN NULL
+                  ELSE mslspcprn.rptg_dt
+           END,
+           rptg_usid =
+           CASE
+                  WHEN mslspcprn.prsc_prgr_stat_cd = 'M'
+                  AND    result.rslt_prgr_stat_cd = 'N' THEN #{session.portal_id}
+                  WHEN mslspcprn.prsc_prgr_stat_cd = 'N'
+                  AND    result.rslt_prgr_stat_cd = 'M' THEN NULL
+                  ELSE mslspcprn.rptg_usid
+           END,
+           spcm_ents_prgr_stat_cd = result.spcm_ents_prgr_stat_cd
+    FROM   (
+                  SELECT mslexmrsn.spcm_no,
+                         MIN(rslt_prgr_stat_cd)      AS rslt_prgr_stat_cd,
+                         MIN(spcm_ents_prgr_stat_cd) AS spcm_ents_prgr_stat_cd
+                         <include refid="fromMslexmrsnMslentrfn"/>
+                  WHERE  mslexmrsn.spcm_no IN
+                         <foreach collection="param[0]" item="spcm" open="(" separator="," close=")">
+                         #{spcm.spcm_no}::text
+                         </foreach>
+                         GROUP BY mslexmrsn.spcm_no ) result
+    WHERE result.spcm_no = mslspcprn.spcm_no
+    </update>
+    
+    <!-- 진단검사결과, 중간보고 취소.
+    * 작성자 : 강현구
+    * 최종 수정일 : 2024-03-15 -->
+    <update id="cnclIptnRslt" parameterType="com.duzon.lulu.service.MSC.util.MSLC.MSLCParamModel">
+    UPDATE  mslexmrsn
+    SET     exmn_rslt_valu = NULL,
+            rslt_prgr_stat_cd = 'E',
+            rslt_rgst_dt = CURRENT_TIMESTAMP,
+            rslt_rgst_usid = #{session.portal_id},
+            last_updt_dt = CURRENT_TIMESTAMP,
+            last_updt_usid = #{session.portal_id},
+            dgsg_no = #{param[0].dgsg_no}
+    WHERE   mslexmrsn.spcm_no = #{param[0].spcm_no}::text
+    AND     mslexmrsn.exmn_cd = #{param[0].exmn_cd}::text
+   </update>
+    
+    
+    <!-- 진단검사 결과, 최종보고
+    * 작성자 : 강현구A
+    * 최종 수정일 : 2024-03-15 -->
+    <select id="rptgRslt" parameterType="com.duzon.lulu.service.MSC.util.MSLC.MSLCParamModel" resultType="com.duzon.lulu.service.MSC.MSC_020000.model.RptgRsltModel">
+    UPDATE    mslexmrsn
+    SET       rslt_prgr_stat_cd = 'N',
+              rptg_dt = CURRENT_TIMESTAMP,
+              rptg_usid = #{session.portal_id},
+              last_updt_dt = CURRENT_TIMESTAMP,
+              last_updt_usid = #{session.portal_id}
+    FROM      ( 
+              SELECT
+                       mslexmrsn.spcm_no,
+                       medprscdm.prsc_cd,
+                       medprscdm.prsc_nm,
+                       mslexmrsn.exmn_date,
+                       CONCAT(hooptbaim.pt_nm, hooptbaim.nm_dscm_dvcd) as pt_nm,
+                       cfgwuserm.usr_sqno as mdcr_dr_id
+              <include refid="fromMslexmrsnMslentrfn"/>
+              JOIN     medprscdm
+              ON       medprscdm.prsc_cd = mslexmrsn.exmn_cd
+              JOIN     hooptbaim
+              ON       hooptbaim.pid = mslexmrsn.pid
+              JOIN     hoootrcin
+              ON       hoootrcin.rcpn_no = mslexmrsn.rcpn_no
+              AND      hstr_stat_cd = 'Y'
+              JOIN     cfgwuserm 
+              ON       cfgwuserm.usid = hoootrcin.mdcr_dr_id
+              WHERE    (mslexmrsn.spcm_no , mslexmrsn.exmn_cd) IN
+                       <foreach collection="param[0]" item="rslt" open="(" separator="," close=")">
+                       (#{rslt.spcm_no}::text, #{rslt.exmn_cd}::text)
+                       </foreach> ) result
+    WHERE     mslexmrsn.spcm_no = result.spcm_no
+    AND       mslexmrsn.exmn_cd = result.prsc_cd
+	RETURNING mslexmrsn.spcm_no, 
+              mslexmrsn.exmn_cd,
+              mslexmrsn.exmn_rslt_valu,
+              mslexmrsn.cvr_lwlm_valu,
+              mslexmrsn.cvr_uplm_valu,
+              mslexmrsn.cvr_lwlm_rang_type_cd,
+              mslexmrsn.cvr_uplm_rang_type_cd
+    </select>
+    
+     <!-- 진단검사 결과, 최종보고취소
+     * 작성자 : 강현구
+     * 최종 수정일 : 2024-03-15 -->
+    <update id="cnclRptgRslt" parameterType="com.duzon.lulu.service.MSC.util.MSLC.MSLCParamModel">
+    UPDATE    mslexmrsn
+    SET       rslt_prgr_stat_cd = 'M',
+              rptg_dt = NULL,
+              rptg_usid = NULL,
+              last_updt_dt = CURRENT_TIMESTAMP,
+              last_updt_usid = #{session.portal_id}
+    FROM      (
+              SELECT
+                      mslexmrsn.spcm_no,
+                      medprscdm.prsc_cd,
+                      medprscdm.prsc_nm,
+                      mslexmrsn.exmn_date,
+                      CONCAT(hooptbaim.pt_nm, hooptbaim.nm_dscm_dvcd) as pt_nm,
+                      cfgwuserm.usr_sqno as mdcr_dr_id
+              FROM    mslexmrsn
+              JOIN    medprscdm
+              ON      medprscdm.prsc_cd = mslexmrsn.exmn_cd
+              JOIN    hooptbaim
+              ON      hooptbaim.pid = mslexmrsn.pid
+              JOIN    hoootrcin
+              ON      hoootrcin.rcpn_no = mslexmrsn.rcpn_no
+              AND     hstr_stat_cd = 'Y'
+              JOIN    cfgwuserm
+              ON      cfgwuserm.usid = hoootrcin.mdcr_dr_id
+              WHERE   ( mslexmrsn.spcm_no , mslexmrsn.exmn_cd ) IN
+                      <foreach collection="param[0]" item="rslt" open="(" separator="," close=")">
+                      (#{rslt.spcm_no}::text, #{rslt.exmn_cd}::text)
+                      </foreach> ) result
+    WHERE     mslexmrsn.spcm_no = result.spcm_no
+    AND       mslexmrsn.exmn_cd = result.prsc_cd
+    </update>
+    
+    <!-- [최종보고] 버튼 클릭시 동작하는 쿼리 -->
+    <insert id="rptgMscRslt" parameterType="com.duzon.lulu.service.MSC.util.MSLC.MSLCParamModel">
+    	insert into mscemnrsn (
+			frst_rgst_usid,
+		    last_updt_usid,
+		    pid,
+		    prsc_date,
+		    prsc_sqno,
+		    prsc_clsf_cd,
+		    slip_cd,
+		    exmn_cd,
+		    exmn_rslt_1,
+		    exmn_rslt_2,
+		    rslt_type_dvsn,
+		    exmn_rslt_unit_nm,
+		    rfvl_lwlm_valu,
+		    rfvl_Uplm_valu,
+		   	exmn_pclr_matr,
+		    prsc_prgr_stat_cd,
+		    cndt_usid,
+		    cndt_dt,
+		    rptg_dt,
+		    rcpn_no,
+		    rfvl_lwlm_rang_type_cd,
+            rfvl_uplm_rang_type_cd,
+            exmn_item_rmrk_cnts )
+       select 
+		   #{session.portal_id} as frst_rgst_usid,
+		   #{session.portal_id} as last_updt_usid,
+		   mslspcprn.pid,
+		   mslspcprn.prsc_date,
+		   mslspcprn.prsc_sqno,
+		   medprscdm.prsc_clsf_cd,
+		   medprscdm.slip_cd,
+		   mslexmrsn.exmn_cd,
+		   mslexmrsn.exmn_rslt_valu,
+		   mslexmrsn.txt_rslt_valu,
+		   mslexmrsn.rslt_type_dvsn,
+		   mslexmrsn.rslt_unit_dvsn,
+		   mslexmrsn.rfvl_lwlm_valu,
+		   mslexmrsn.rfvl_uplm_valu,
+		   medprscdm.exmn_spmn_matr,
+		   'N' as prsc_prgr_stat_cd,
+		   #{session.portal_id} as cndt_usid,
+		   mslspcprn.cndt_dt,
+		   current_date as rptg_dt,
+		   mslexmrsn.rcpn_no,
+           mslexmrsn.rfvl_lwlm_rang_type_cd,
+           mslexmrsn.rfvl_uplm_rang_type_cd,
+           mslexmrsn.exmn_item_rmrk_cnts
+		from mslexmrsn
+		join medprscdm on medprscdm.prsc_cd = mslexmrsn.exmn_cd
+		join mslspcprn on mslspcprn.spcm_no = mslexmrsn.spcm_no
+		where (mslexmrsn.spcm_no , mslexmrsn.exmn_cd) in 
+			<foreach collection="param[0]" item="rslt" open="(" separator="," close=")">
+				(#{rslt.spcm_no}::text, #{rslt.exmn_cd}::text)
+			</foreach>
+    </insert>
+
+    <!-- [최종보고 취소] 버튼 눌렀을때 하는 쿼리 동작 -->
+    <delete id="cnclRptgMscRslt" parameterType="Collection">
+    	delete from mscemnrsn using (
+    		select
+    			mslspcprn.pid,
+    			mslspcprn.prsc_date,
+    			mslspcprn.prsc_sqno,
+    			mslexmrsn.exmn_cd
+    		from mslexmrsn
+			join mslspcprn on mslspcprn.spcm_no = mslexmrsn.spcm_no
+			where (mslexmrsn.spcm_no , mslexmrsn.exmn_cd) in 
+				<foreach collection="collection" item="rslt" open="(" separator="," close=")">
+					(#{rslt.spcm_no}::text, #{rslt.exmn_cd}::text)
+				</foreach>
+    	) result
+        where result.pid = mscemnrsn.pid
+        	and result.prsc_date = mscemnrsn.prsc_date
+        	and result.prsc_sqno = mscemnrsn.prsc_sqno
+        	and result.exmn_cd = mscemnrsn.exmn_cd
+    </delete>
+ 
+	<!-- 검사결과이력 조회 -->
+	<select id="rtrvExmnRsltHstrList" parameterType="Map" resultType="com.duzon.lulu.service.MSC.MSC_020000.model.ExmnRsltHstrModel">
+		select
+			spcm_no,
+			exmn_cd,
+			hstr_sqno,
+			exmn_rslt_valu,
+			txt_rslt_valu,
+			rslt_unit_dvsn,
+			rfvl_lwlm_valu,
+			rfvl_uplm_valu,
+			to_char(rslt_rgst_dt, 'YYYY-MM-DD HH24:MI:SS') as rslt_rgst_dt,
+			rslt_rgst_usid,
+			(
+				select user_nm 
+				from cfgwuserm
+				where usid = rslt_rgst_usid 
+			) as rslt_rgst_user_nm,
+			case
+				when exists(select 1 from cmmdgsgnh where dgsg_key = dgsg_no) then 'Y'
+				else 'N'
+			end as dgsg_yn,
+			hstr_stat_cd
+		from mslexmrsh
+		where 
+			spcm_no = #{spcm_no}
+			and exmn_cd = #{exmn_cd}
+			and hstr_stat_cd is not NULL
+		order by hstr_sqno desc
+	</select>
+	
+	
+	<!--
+	* 검사 이후 처방 싱크.
+	* 작성자 : 강현구 
+	* 최종 수정일 : 2024-03-15 -->
+	<update id="syncPrsc" parameterType="com.duzon.lulu.service.MSC.util.MSLC.MSLCParamModel">
+    UPDATE meddttpsn
+    SET    last_updt_usid = #{session.portal_id},
+           last_updt_dt = CURRENT_TIMESTAMP,
+           prsc_prgr_stat_cd = mslspcprn.prsc_prgr_stat_cd,
+           rptg_dt =
+           CASE
+                  WHEN meddttpsn.prsc_prgr_stat_cd = 'M'
+                  AND    mslspcprn.prsc_prgr_stat_cd = 'N' THEN CURRENT_TIMESTAMP
+                  WHEN meddttpsn.prsc_prgr_stat_cd = 'N'
+                  AND    mslspcprn.prsc_prgr_stat_cd = 'M' THEN NULL
+                  ELSE meddttpsn.rptg_dt
+           END,
+           rptr_id =
+           CASE
+                  WHEN meddttpsn.prsc_prgr_stat_cd = 'M'
+                  AND    mslspcprn.prsc_prgr_stat_cd = 'N' THEN #{session.portal_id}
+                  WHEN meddttpsn.prsc_prgr_stat_cd = 'N'
+                  AND    mslspcprn.prsc_prgr_stat_cd = 'M' THEN NULL
+                  ELSE meddttpsn.rptr_id
+           END,
+           rptg_prsn_empl_sqno =
+           CASE
+                  WHEN meddttpsn.prsc_prgr_stat_cd = 'M'
+                  AND    mslspcprn.prsc_prgr_stat_cd = 'N' THEN #{session.employee_no}
+                  WHEN meddttpsn.prsc_prgr_stat_cd = 'N'
+                  AND    mslspcprn.prsc_prgr_stat_cd = 'M' THEN NULL
+                  ELSE meddttpsn.rptg_prsn_empl_sqno
+           END,
+           iptn_dt =
+           CASE
+                  WHEN meddttpsn.prsc_prgr_stat_cd = 'E'
+                  AND    mslspcprn.prsc_prgr_stat_cd = 'M' THEN CURRENT_TIMESTAMP
+                  WHEN meddttpsn.prsc_prgr_stat_cd = 'M'
+                  AND    mslspcprn.prsc_prgr_stat_cd = 'E' THEN NULL
+                  ELSE meddttpsn.iptn_dt
+           END,
+           iptn_prsn_id =
+           CASE
+                  WHEN meddttpsn.prsc_prgr_stat_cd = 'E'
+                  AND    mslspcprn.prsc_prgr_stat_cd = 'M' THEN #{session.portal_id}
+                  WHEN meddttpsn.prsc_prgr_stat_cd = 'M'
+                  AND    mslspcprn.prsc_prgr_stat_cd = 'E' THEN NULL
+                  ELSE meddttpsn.iptn_prsn_id
+           END,
+           iptn_prsn_empl_sqno =
+           CASE
+                  WHEN meddttpsn.prsc_prgr_stat_cd = 'E'
+                  AND    mslspcprn.prsc_prgr_stat_cd = 'M' THEN #{session.employee_no}
+                  WHEN meddttpsn.prsc_prgr_stat_cd = 'M'
+                  AND    mslspcprn.prsc_prgr_stat_cd = 'E' THEN NULL
+                  ELSE meddttpsn.iptn_prsn_empl_sqno
+           END,
+           trms_dt =
+           CASE
+                  WHEN meddttpsn.trms_stat_dvsn = 'F'
+                  AND    mslspcprn.spcm_ents_prgr_stat_cd = 'G' THEN CURRENT_TIMESTAMP
+                  WHEN meddttpsn.trms_stat_dvsn = 'G'
+                  AND    mslspcprn.spcm_ents_prgr_stat_cd = 'F' THEN NULL
+                  ELSE meddttpsn.trms_dt
+           END,
+           rply_dt =
+           CASE
+                  WHEN meddttpsn.trms_stat_dvsn = 'G'
+                  AND    mslspcprn.spcm_ents_prgr_stat_cd = 'H' THEN CURRENT_TIMESTAMP
+                  ELSE meddttpsn.rply_dt
+           END,
+           trms_stat_dvsn = mslspcprn.spcm_ents_prgr_stat_cd
+    FROM   mslspcprn
+    WHERE  mslspcprn.spcm_no IN
+           <foreach collection="param[0]" item="spcm" open="(" separator="," close=")">
+           #{spcm.spcm_no}::text
+           </foreach>
+           AND meddttpsn.spcm_no_1 = mslspcprn.spcm_no
+           AND meddttpsn.dc_yn = 'N'
+           AND (meddttpsn.mdcr_cncl_yn is NULL or meddttpsn.mdcr_cncl_yn != 'Y')
+	</update>
+	
+	<select id="rtrvCvrNotiDetailList" parameterType="Collection" resultType="com.duzon.lulu.service.MSC.MSC_020000.model.CVRNotiDetailModel">
+    SELECT distinct on (mslexmrsn.spcm_no, mslexmrsn.exmn_cd, meddttpsn.prsc_dr_id)
+           mslexmrsn.exmn_date,
+           medprscdm.prsc_cd,
+           medprscdm.prsc_nm,
+           prsc_dr.usr_sqno AS prsc_dr_usr_sqno,
+           mslexmrsn.exmn_rslt_valu,
+           mslexmrsn.cvr_lwlm_valu,
+           mslexmrsn.cvr_lwlm_rang_type_cd,
+           mslexmrsn.cvr_uplm_valu,
+           mslexmrsn.cvr_uplm_rang_type_cd,
+           TO_CHAR(mslexmrsn.rslt_rgst_dt, 'YYYY-MM-DD HH24:MI') AS rslt_rgst_dt,
+           mdcr_dr.usr_sqno AS mdcr_dr_usr_sqno,
+           mslexmrsn.rslt_unit_dvsn AS exmn_rslt_unit_nm,
+           CONCAT(hooptbaim.pt_nm, hooptbaim.nm_dscm_dvcd) AS pt_nm
+    FROM   mslexmrsn
+    JOIN   hooptbaim
+    ON     hooptbaim.pid = mslexmrsn.pid
+    JOIN   meddttpsn
+    ON     meddttpsn.spcm_no_1 = mslexmrsn.spcm_no
+    JOIN   medprscdm
+    ON     medprscdm.prsc_cd = mslexmrsn.exmn_cd
+    JOIN   cfgwuserm prsc_dr
+    ON     prsc_dr.usid = meddttpsn.prsc_dr_id
+    JOIN   hoootrcin
+    ON     hoootrcin.rcpn_no = mslexmrsn.rcpn_no
+    JOIN   cfgwuserm mdcr_dr
+    ON     mdcr_dr.usid = hoootrcin.mdcr_dr_id
+    WHERE (spcm_no, exmn_cd) IN 
+    <foreach collection="collection" item="rslt" open="(" separator="," close=")">
+    (#{rslt.spcm_no}::text, #{rslt.exmn_cd}::text)
+    </foreach>
+	</select>
+</mapper>
